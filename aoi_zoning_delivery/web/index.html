@@ -38,6 +38,10 @@
     <select id="city" style="margin-top:6px"><option value="">选择市/州（可选）…</option></select>
     <select id="county" style="margin-top:6px"><option value="">选择县/区（可选）…</option></select>
     <button id="genadmin" class="primary" style="margin-top:6px">生成所选行政区</button>
+    <label style="display:flex;align-items:center;gap:6px;margin-top:4px">
+      <input id="quickcity" type="checkbox" style="width:auto" checked/>
+      城市快速预览（推荐，约 2–5 分钟）
+    </label>
     <button id="clearcache" class="ghost">清除缓存与结果</button>
     <label>或使用当前地图视野</label>
     <button id="gen" class="primary">生成当前视野分区</button>
@@ -52,9 +56,19 @@
     <label style="margin-top:4px;display:block">在线底图（可选，需联网）</label>
     <select id="online-basemap" style="width:100%;margin-top:2px;padding:4px">
       <option value="">无（仅本地离线底图）</option>
+      <option value="esri_light" selected>Esri 浅灰（v1.7.0 风格）</option>
       <option value="esri_imagery">Esri 影像</option>
       <option value="esri_street">Esri 街道</option>
       <option value="osm">OSM 瓦片</option>
+    </select>
+    <label style="margin-top:4px;display:block">数据图层（可选）</label>
+    <select id="datalayer" style="width:100%;margin-top:2px;padding:4px">
+      <option value="">无附加数据层</option>
+      <option value="major">OSM 主干道</option>
+      <option value="roads">OSM 全部道路</option>
+      <option value="water">OSM 水系</option>
+      <option value="rail">OSM 铁路</option>
+      <option value="reference">广东移动标准分区方案</option>
     </select>
     <label style="display:flex;align-items:center;gap:6px;margin-top:4px">
       <input id="reference" type="checkbox" style="width:auto"/>
@@ -89,6 +103,10 @@ map.addControl(new maplibregl.NavigationControl(),"top-right");
 map.addControl(new maplibregl.AttributionControl({compact:true}),"bottom-right");
 let onlineKind = "";
 const ONLINE_BASEMAPS = {
+  esri_light: {
+    tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"],
+    attribution:"Esri Light Gray Canvas"
+  },
   esri_imagery: {
     tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
     attribution:"Esri World Imagery"
@@ -172,13 +190,27 @@ function ensureLayers(){
       paint:{"line-color":"#dc2626","line-width":0.7,"line-opacity":0.75}});
     map.setLayoutProperty("reference-lines","visibility","none");
   }
+  if(!map.getSource("datalayer")){
+    map.addSource("datalayer",{type:"geojson",data:EMPTY});
+  }
   if(!map.getSource("zones")){
     map.addSource("zones",{type:"geojson",data:EMPTY});
     // Transparent fill keeps click hit-testing without drawing colour.
     map.addLayer({id:"zones-fill",type:"fill",source:"zones",
       paint:{"fill-color":"#000000","fill-opacity":0}});
+    // Data layer sits below the zoning borders.
+    map.addLayer({id:"datalayer",type:"line",source:"datalayer",paint:{
+      "line-color":["match",["get","klass"],
+        "major","#f59e0b","water","#38bdf8","rail","#a855f7","#64748b"],
+      "line-width":["match",["get","klass"],
+        "major",1.6,"water",1.2,"rail",1.2,0.7],
+      "line-opacity":0.9}});
+    // White halo + dark line: boundaries stay obvious over imagery and
+    // over the light OSM basemap, with no fill colour.
+    map.addLayer({id:"zones-halo",type:"line",source:"zones",paint:{
+      "line-color":"#ffffff","line-width":3.0,"line-opacity":0.85}});
     map.addLayer({id:"zones-line",type:"line",source:"zones",paint:{
-      "line-color":"#111827","line-width":0.9,"line-opacity":0.95}});
+      "line-color":"#0f172a","line-width":1.4,"line-opacity":0.98}});
     map.addSource("selected",{type:"geojson",data:EMPTY});
     map.addLayer({id:"selected-line",type:"line",source:"selected",paint:{
       "line-color":"#facc15","line-width":4.0,"line-opacity":1}});
@@ -219,6 +251,27 @@ async function loadBasemap(bbox, key){
     const fc = await r.json();
     if(map.getSource("basemap")) map.getSource("basemap").setData(fc);
   }catch(e){ /* offline basemap is optional */ }
+}
+
+async function loadDataLayer(bbox, key, kind){
+  if(!kind) return;
+  if(kind==="reference"){
+    setLayersVisible(["reference-lines"], true);
+    const cb=document.getElementById("reference"); if(cb) cb.checked=true;
+    await loadReference(bbox);
+    return;
+  }
+  if(!bbox){ statusEl.textContent="请先生成区域，再加载数据图层"; return; }
+  try{
+    const q=new URLSearchParams({bbox, kind});
+    if(key) q.set("key", key);
+    const fc=await fetch(`/zoning/layers?${q}`).then(r=>r.json());
+    if(map.getSource("datalayer")) map.getSource("datalayer").setData(fc);
+    const n=(fc.features||[]).length;
+    statusEl.textContent="数据图层已加载："+
+      ({major:"OSM 主干道",roads:"OSM 全部道路",water:"OSM 水系",
+        rail:"OSM 铁路"}[kind]||kind)+`（${n} 条）`;
+  }catch(e){ statusEl.textContent="数据图层加载失败："+e.message; }
 }
 
 async function loadReference(bbox){
@@ -268,6 +321,8 @@ loadCatalogs();
 
 async function generate(bbox, scope="view", adminName=null, level=null, center=null){
   currentBbox = bbox;
+  const quickEl=document.getElementById("quickcity");
+  const quick = scope==="city" && !!(quickEl && quickEl.checked);
   // Selecting a province starts a demo job; a quick city/county click starts
   // another.  Only the newest job may write the map/status, otherwise the
   // slower earlier job overwrites the newer result.
@@ -280,6 +335,7 @@ async function generate(bbox, scope="view", adminName=null, level=null, center=n
     const km2 = (v[2]-v[0])*111.32*Math.cos(lat*Math.PI/180)*(v[3]-v[1])*110.57;
     if(scope==="view") eta = Math.max(20, 20 + km2*0.8);
     else if(scope==="province") eta = Math.max(30, 30 + km2*0.0002);
+    else if(scope==="city" && quick) eta = Math.max(120, 120 + km2*0.002);
     else if(scope==="city") eta = Math.max(60, 60 + km2*0.02);
     else eta = Math.max(30, 30 + km2*0.8);
   }catch(e){}
@@ -291,7 +347,7 @@ async function generate(bbox, scope="view", adminName=null, level=null, center=n
     // Delegate to the job API so a 30-60 s generation cannot look like a
     // hung request; poll once per second and show elapsed time.
     const start=await fetch("/zoning/jobs",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({bbox, scope, admin_name:adminName, level, center})});
+      body:JSON.stringify({bbox, scope, admin_name:adminName, level, center, quick})});
     const job=await start.json();
     if(!start.ok) throw new Error(job.detail||start.status);
     if(my!==genSeq) return;
@@ -333,6 +389,8 @@ async function generate(bbox, scope="view", adminName=null, level=null, center=n
     fitZones(fc);
     if(document.getElementById("basemap").checked) loadBasemap(bbox, currentKey);
     if(document.getElementById("reference").checked) loadReference(bbox);
+    const dl=document.getElementById("datalayer");
+    if(dl && dl.value) loadDataLayer(bbox, currentKey, dl.value);
   }catch(e){ if(my===genSeq){ statusEl.textContent="生成失败："+e.message; progressWrap.style.display="none"; } }
   finally{
     if(my===genSeq){ genEl.disabled=false; genBboxEl.disabled=false; }
@@ -367,6 +425,20 @@ document.getElementById("fit").onclick=()=>{
 };
 document.getElementById("online-basemap").onchange=(e)=>{
   setOnlineBasemap(e.target.value);
+};
+document.getElementById("datalayer").onchange=(e)=>{
+  const kind=e.target.value;
+  if(kind==="reference"){
+    loadDataLayer(currentBbox, currentKey, "reference");
+    return;
+  }
+  const cb=document.getElementById("reference");
+  if(cb && cb.checked){ cb.checked=false; setLayersVisible(["reference-lines"], false); }
+  if(!kind){
+    if(map.getSource("datalayer")) map.getSource("datalayer").setData(EMPTY);
+    return;
+  }
+  loadDataLayer(currentBbox, currentKey, kind);
 };
 document.getElementById("basemap").onchange=(e)=>{
   setLayersVisible(["basemap-water","basemap-minor","basemap-major"],

@@ -15,7 +15,11 @@ import shapely
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 _HERE = Path(__file__).resolve().parent
-CACHE = _HERE / "cache" if (_HERE / "cache").exists() else ROOT / "cache"
+# The standalone delivery keeps results next to its models (ROOT/cache);
+# the in-repo service keeps them inside commercial_zoning/cache.  Deriving
+# this from directory existence made the server switch cache roots as soon
+# as another component created app/cache.
+CACHE = (ROOT / "cache") if _HERE.name == "app" else (_HERE / "cache")
 CACHE.mkdir(parents=True, exist_ok=True)
 
 
@@ -1566,7 +1570,8 @@ def _admin_quality():
 
 
 def generate_admin_region(bbox, force=False, scope="city", admin_name=None,
-                          level=None, center=None, progress=None):
+                          level=None, center=None, progress=None,
+                          quick=False):
     """Whole-city scheme from OSM administrative polygons.
 
     A prefecture has 5,000-40,000 km2; the fine road/block pipeline degrades
@@ -1575,10 +1580,14 @@ def generate_admin_region(bbox, force=False, scope="city", admin_name=None,
     coverage-complete, fully explainable citywide scheme: every boundary is
     an OSM administrative boundary.  Small townships are merged into their
     longest-shared neighbour; nothing is cut without an OSM line.
+
+    ``quick`` skips the density budget and uses only major linework, which
+    cuts the whole-prefecture runtime from tens of minutes to a few.
     """
     b = _bbox(bbox, scope=scope)
     key = (_key(b, city_mode=True)
-           + f"-adm-{scope}-{level or ''}-{admin_name or ''}")
+           + f"-adm-{scope}-{level or ''}-{admin_name or ''}"
+           + ("-quick" if quick else ""))
     d = CACHE / key
     d.mkdir(parents=True, exist_ok=True)
     zones_path = d / "xgb_zones.geojson"
@@ -1706,8 +1715,47 @@ def generate_admin_region(bbox, force=False, scope="city", admin_name=None,
     _report(progress, 52, "抽取道路/水系线")
     lines_path = d / "lines.geojson"
     if not lines_path.exists() or lines_path.stat().st_size < 300:
-        os.environ["XGB_PBF"] = pbf
-        build_lines(b, lines_path)
+        if quick:
+            # Quick preview only needs the feature lines that can bound a
+            # township; the full road/water/admin extraction takes minutes.
+            try:
+                import pyogrio as _pyo
+                parts = []
+                rd = _pyo.read_dataframe(
+                    pbf, layer="lines", bbox=b,
+                    where=("highway IN ('motorway','trunk','primary',"
+                           "'secondary')"),
+                    columns=["highway", "geometry"], on_invalid="warn")
+                if len(rd):
+                    rd["klass"] = "major"
+                    parts.append(rd[["klass", "geometry"]])
+                wt = _pyo.read_dataframe(
+                    pbf, layer="lines", bbox=b,
+                    where="waterway IN ('river','canal')",
+                    columns=["waterway", "geometry"], on_invalid="warn")
+                if len(wt):
+                    wt["klass"] = "water"
+                    parts.append(wt[["klass", "geometry"]])
+                rl = _pyo.read_dataframe(
+                    pbf, layer="lines", bbox=b, where="railway IS NOT NULL",
+                    columns=["railway", "geometry"], on_invalid="warn")
+                if len(rl):
+                    rl["klass"] = "rail"
+                    parts.append(rl[["klass", "geometry"]])
+                if parts:
+                    gpd.GeoDataFrame(
+                        pd.concat(parts, ignore_index=True),
+                        crs=4326).to_file(lines_path, driver="GeoJSON")
+                else:
+                    build_lines(b, lines_path)
+                print("[quick-lines] major roads/rivers/rails only", flush=True)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[quick-lines] fallback: {exc}")
+                os.environ["XGB_PBF"] = pbf
+                build_lines(b, lines_path)
+        else:
+            os.environ["XGB_PBF"] = pbf
+            build_lines(b, lines_path)
     lines = gpd.read_file(lines_path)
     if scope == "province":
         # Province-wide local-road cuts are expensive; major roads, rails
@@ -1744,24 +1792,37 @@ def generate_admin_region(bbox, force=False, scope="city", admin_name=None,
         # Province: townships are already coherent OSM areas; merging them
         # up to 3 km2 turned into a multi-minute loop on 900+ polygons.
         max_area, min_part, min_km2 = 15.0, 0.5, 0.3
-    _report(progress, 64, "沿 OSM 线切分")
-    z8 = _split_admin_by_density(z8, lines, min_part=min_part,
-                                 default_max_area=max_area)
+    if quick:
+        max_area, min_part, min_km2 = 4.0, 0.25, 1.5
+        try:
+            lines = lines[lines["klass"].isin(
+                ["major", "rail", "water"])].copy()
+        except Exception:  # noqa: BLE001
+            pass
+        _report(progress, 64, "沿 OSM 线切分（快速）")
+        z8 = split_with_roads(z8, lines, max_area=max_area,
+                              min_part=min_part, strict=False)
+    else:
+        _report(progress, 64, "沿 OSM 线切分")
+        z8 = _split_admin_by_density(z8, lines, min_part=min_part,
+                                     default_max_area=max_area)
     _report(progress, 76, "合并小块/低紧凑度区")
     z8["geometry"] = z8.geometry.map(_poly)
     z8 = z8[z8.geometry.notna() & ~z8.geometry.is_empty].reset_index(drop=True)
     # Merge only undersized faces; merging every face up to 6 km2 would undo
     # the road split and leave a county with a handful of giant zones.
     z8 = _merge_admin_faces(z8, min_km2=min_km2,
-                            passes=min(4000, 2 * len(z8) + 10))
+                            passes=min(800 if quick else 4000,
+                                       2 * len(z8) + 10))
     z8 = _absorb_tiny(z8, min_m2=1000.0)
-    try:
-        # A province-scale audit flagged a 17 km2 corridor; fold low-pp
-        # administrative faces into a neighbour when the union is cleaner.
-        z8 = _merge_bad_zones(
-            z8, max_km2=(30.0 if scope == "province" else 8.0))
-    except Exception as exc:  # noqa: BLE001
-        print(f"[admin] low-pp merge skipped: {exc}")
+    if not quick:
+        try:
+            # A province-scale audit flagged a 17 km2 corridor; fold low-pp
+            # administrative faces into a neighbour when the union is cleaner.
+            z8 = _merge_bad_zones(
+                z8, max_km2=(30.0 if scope == "province" else 8.0))
+        except Exception as exc:  # noqa: BLE001
+            print(f"[admin] low-pp merge skipped: {exc}")
     z8 = z8[z8.geometry.notna() & ~z8.geometry.is_empty].reset_index(drop=True)
     z8["geometry"] = z8.geometry.map(_fill_admin_holes)
     z8 = z8[z8.geometry.notna() & ~z8.geometry.is_empty].reset_index(drop=True)
@@ -1769,21 +1830,23 @@ def generate_admin_region(bbox, force=False, scope="city", admin_name=None,
     # count as the fine path.  Attach road density, derive the area-budget
     # target from the linework, and split/merge the townships to it.
     _dtarget = None
-    try:
-        z8 = _attach_road_density(z8, lines)
-        _zarea = float(z8.to_crs(z8.estimate_utm_crs()).area.sum()) / 1e6
-        _dtarget = _density_target(b, lines_path, frame=frame, scope=scope,
-                                   city_mode=(scope == "city"))
-        if _dtarget:
-            z8 = _enforce_zone_count(z8, _dtarget, lines=lines,
-                                     work_area_km2=_zarea)
-            z8["geometry"] = z8.geometry.map(_poly)
-            z8 = z8[z8.geometry.notna() & ~z8.geometry.is_empty]
-            z8 = z8.reset_index(drop=True)
-            print(f"[admin] density target {_dtarget} -> {len(z8)} zones",
-                  flush=True)
-    except Exception as exc:  # noqa: BLE001
-        print(f"[admin] density count skipped: {exc}")
+    if not quick:
+        try:
+            z8 = _attach_road_density(z8, lines)
+            _zarea = float(z8.to_crs(z8.estimate_utm_crs()).area.sum()) / 1e6
+            _dtarget = _density_target(b, lines_path, frame=frame,
+                                       scope=scope,
+                                       city_mode=(scope == "city"))
+            if _dtarget:
+                z8 = _enforce_zone_count(z8, _dtarget, lines=lines,
+                                         work_area_km2=_zarea)
+                z8["geometry"] = z8.geometry.map(_poly)
+                z8 = z8[z8.geometry.notna() & ~z8.geometry.is_empty]
+                z8 = z8.reset_index(drop=True)
+                print(f"[admin] density target {_dtarget} -> "
+                      f"{len(z8)} zones", flush=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[admin] density count skipped: {exc}")
     _report(progress, 88, "质量清理")
     z8["zone"] = np.arange(1, len(z8) + 1)
     z8["kind"] = "land"
@@ -1820,7 +1883,8 @@ def generate_admin_region(bbox, force=False, scope="city", admin_name=None,
             "zones": len(z8), "elapsed_s": round(time.time() - t0, 1),
             "model": "admin", "target": int(_dtarget or len(z8)),
             "quality_score": qs,
-            "bad_zones": int(sum(m.holes > 0)), "engine": "admin"}
+            "bad_zones": int(sum(m.holes > 0)),
+            "engine": "admin-quick" if quick else "admin"}
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2),
                          encoding="utf-8")
     print(f"[admin] {len(z8)} zones / score {qs} / "
@@ -2420,9 +2484,17 @@ def generate_guangdong_aggregate(bbox, force=False, scope="province",
 
 def generate_region(bbox, force=False, city_mode=False, scope=None,
                     admin_name=None, level=None, center=None, progress=None,
-                    target_count=None):
+                    target_count=None, quick=False):
     _report(progress, 2, "准备区域")
     _ref = _target_meta(admin_name) if admin_name else None
+    # Quick preview: township polygons + major-road cuts, no fine road/block
+    # pipeline and no density-count enforcement.  A whole prefecture comes
+    # back in a few minutes instead of ~40, which is what the map UI needs.
+    if scope == "city" and quick:
+        return generate_admin_region(bbox, force=force, scope=scope,
+                                     admin_name=admin_name, level=level,
+                                     center=center, progress=progress,
+                                     quick=True)
     if scope == "province" and _ref and _ref.get("kind") == "province":
         return generate_guangdong_aggregate(
             bbox, force=force, scope="province", admin_name=admin_name,
@@ -2434,7 +2506,8 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
     if scope in ("province", "city"):
         return generate_admin_region(bbox, force=force, scope=scope,
                                      admin_name=admin_name, level=level,
-                                     center=center, progress=progress)
+                                     center=center, progress=progress,
+                                     quick=quick)
     ref_target = int(target_count) if target_count else (
         int(_ref["count"]) if _ref and _ref.get("count") else None)
     county_frame = None
@@ -3107,6 +3180,7 @@ JOBS = {}
 # Only one generation at a time: two concurrent 1-2 GB pipeline runs on a
 # memory-constrained machine were the main cause of "next region kills the process".
 _GEN_LOCK = threading.Lock()
+_QUICK_LOCK = threading.Lock()
 
 
 def clear_generated_cache(keep=0):
@@ -3125,7 +3199,7 @@ def clear_generated_cache(keep=0):
 
 
 def start_job(bbox, force=False, city_mode=False, scope=None,
-              admin_name=None, level=None, center=None):
+              admin_name=None, level=None, center=None, quick=False):
     b = _bbox(bbox, city=city_mode, scope=scope)
     jid = uuid.uuid4().hex[:12]
     JOBS[jid] = {"job_id": jid, "status": "queued", "bbox": list(b),
@@ -3136,13 +3210,17 @@ def start_job(bbox, force=False, city_mode=False, scope=None,
 
     def run():
         JOBS[jid].update(status="queued", stage="等待前一个任务完成")
-        with _GEN_LOCK:
+        # Quick previews are light (townships + major roads) and must not
+        # sit behind a 40-minute fine pipeline; they get their own slot.
+        lock = _QUICK_LOCK if quick else _GEN_LOCK
+        with lock:
             JOBS[jid].update(status="running", started=time.time(),
                              progress=1.0, stage="开始")
             try:
                 res = generate_region(b, force=force, city_mode=city_mode,
                                       scope=scope, admin_name=admin_name,
-                                      level=level, center=center, progress=prog)
+                                      level=level, center=center, progress=prog,
+                                      quick=quick)
                 JOBS[jid].update(status="done", result=res, progress=100.0,
                                  stage="完成",
                                  elapsed=time.time() - JOBS[jid]["started"])

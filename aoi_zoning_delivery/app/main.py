@@ -24,6 +24,7 @@ _REFERENCE_DIR = ROOT / "data" / "reference"
 _REF_CACHE = {"stamp": None, "gdf": None}
 _BOUND_CACHE = {}
 _BASEMAP_CACHE = {}
+_LAYER_CACHE = {}
 
 
 def _reference_gdf():
@@ -201,6 +202,102 @@ def zoning_basemap(bbox: str, key: str | None = None):
     return out
 
 
+@app.get("/zoning/layers")
+def zoning_layers(bbox: str, kind: str, key: str | None = None):
+    """Optional OSM data layers for the map sidebar.
+
+    ``kind``: major | roads | water | rail.  Cached region linework is used
+    when a key is supplied (fast); otherwise the bbox is read from the PBF.
+    """
+    from shapely.geometry import box, mapping
+    kind = (kind or "").lower()
+    if kind not in ("major", "roads", "water", "rail"):
+        raise HTTPException(400, "unknown layer")
+    try:
+        b = tuple(float(x) for x in bbox.split(","))
+    except Exception:
+        raise HTTPException(400, "bbox must be lon0,lat0,lon1,lat1")
+    cache_key = f"{kind}|{key or ''}|{bbox}"
+    if cache_key in _LAYER_CACHE:
+        return _LAYER_CACHE[cache_key]
+    import geopandas as gpd
+    g = None
+    if key:
+        p = CACHE / key / "lines.geojson"
+        if p.exists():
+            try:
+                g = gpd.read_file(p)
+                g = g[g.geometry.intersects(box(*b))]
+            except Exception as exc:  # noqa: BLE001
+                print(f"[layers] cached lines skipped: {exc}")
+    if g is None or not len(g):
+        import pyogrio
+        try:
+            from .providers import resolve as resolve_pbf, _osm_conf
+        except ImportError:
+            from commercial_zoning.providers import resolve as resolve_pbf, _osm_conf
+        try:
+            pbf = resolve_pbf(b)
+            cfg = str(_osm_conf())
+            os.environ["OSM_CONFIG_FILE"] = cfg
+            pyogrio.set_gdal_config_options({"OSM_CONFIG_FILE": cfg})
+            if kind in ("major", "roads"):
+                where = ("highway IN ('motorway','trunk','primary','secondary')"
+                         if kind == "major" else
+                         "highway IS NOT NULL")
+                g = pyogrio.read_dataframe(
+                    pbf, layer="lines", bbox=b, where=where,
+                    columns=["highway", "geometry"], on_invalid="warn")
+                kl = g["highway"].astype(str).isin(
+                    ["motorway", "trunk", "primary", "secondary"])
+                g["klass"] = "soft"
+                g.loc[kl, "klass"] = "major"
+            elif kind == "water":
+                g = pyogrio.read_dataframe(
+                    pbf, layer="lines", bbox=b,
+                    where="waterway IN ('river','canal','stream')",
+                    columns=["waterway", "geometry"], on_invalid="warn")
+                g["klass"] = "water"
+            else:
+                g = pyogrio.read_dataframe(
+                    pbf, layer="lines", bbox=b, where="railway IS NOT NULL",
+                    columns=["railway", "geometry"], on_invalid="warn")
+                g["klass"] = "rail"
+        except Exception as exc:  # noqa: BLE001
+            return {"type": "FeatureCollection", "features": [],
+                    "error": str(exc)}
+    if not len(g) or "klass" not in g.columns:
+        out = {"type": "FeatureCollection", "features": []}
+        _LAYER_CACHE[cache_key] = out
+        return out
+    if kind == "major":
+        g = g[g["klass"].astype(str).eq("major")]
+    elif kind == "roads":
+        g = g[g["klass"].astype(str).isin(["major", "minor", "soft"])]
+    elif kind == "water":
+        g = g[g["klass"].astype(str).eq("water")]
+    else:
+        g = g[g["klass"].astype(str).eq("rail")]
+    try:
+        g = g.to_crs(3857)
+        g["geometry"] = g.geometry.simplify(8.0, preserve_topology=False)
+        g = g[~g.geometry.is_empty].to_crs(4326)
+        feats = []
+        for geom, kl in zip(g.geometry, g["klass"].astype(str)):
+            if geom is None or geom.is_empty:
+                continue
+            feats.append({"type": "Feature", "properties": {"klass": kl},
+                          "geometry": mapping(geom)})
+        out = {"type": "FeatureCollection", "features": feats}
+    except Exception as exc:  # noqa: BLE001
+        out = {"type": "FeatureCollection", "features": [],
+               "error": str(exc)}
+    if len(_LAYER_CACHE) > 12:
+        _LAYER_CACHE.clear()
+    _LAYER_CACHE[cache_key] = out
+    return out
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -240,7 +337,8 @@ def zoning_generate(req: dict):
                                scope=req.get("scope"),
                                admin_name=req.get("admin_name"),
                                level=req.get("level"),
-                               center=req.get("center"))
+                               center=req.get("center"),
+                               quick=bool(req.get("quick", False)))
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     except Exception as exc:  # noqa: BLE001
@@ -258,7 +356,8 @@ def zoning_job_start(req: dict):
                          scope=req.get("scope"),
                                admin_name=req.get("admin_name"),
                                level=req.get("level"),
-                               center=req.get("center"))
+                               center=req.get("center"),
+                               quick=bool(req.get("quick", False)))
     except ValueError as exc:
         raise HTTPException(400, str(exc))
 
