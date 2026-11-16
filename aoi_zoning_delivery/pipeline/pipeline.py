@@ -176,6 +176,7 @@ SMOOTH_TOL = float(os.environ.get(
 REFINE = os.environ.get("XGB_REFINE", "0") == "1"
 FINAL_TARGET = int(os.environ.get("XGB_FINAL_TARGET", "1720"))
 COMMERCIAL = os.environ.get("XGB_COMMERCIAL", "0") == "1"
+FAST_FINAL = os.environ.get("XGB_FAST_FINAL", "0") == "1"
 CITY_MODE = os.environ.get("XGB_CITY_MODE", "0") == "1"
 SLIVER_W = float(os.environ.get(
     "XGB_SLIVER_W", "20" if RAW_LINES else ("45" if COMMERCIAL else "25")))
@@ -3862,16 +3863,17 @@ if __name__ == "__main__":
             zones, min_area=float(os.environ.get("XGB_MIN_ZONE_KM2", "0.22")))
         zones = repair_overlaps(zones)
         _gap_check("floor", zones, frame)
-        if OPEN_P:
+        if OPEN_P and not FAST_FINAL:
             zones = open_protrusions(zones, frame, radius=OPEN_R,
                                      min_retain=0.90)
-        if OPEN2:
+        if OPEN2 and not FAST_FINAL:
             # Wider appendages (100-160 m) survive the fine pass; trim them
             # only where the opening actually removes >4% of the zone, so
             # clean zones keep their exact reference-like boundary.
             zones = open_protrusions(zones, frame, radius=OPEN2_R,
                                      min_retain=0.60, trigger=0.04)
-        if os.environ.get("XGB_SPIKE", "1") == "1":
+        if (os.environ.get("XGB_SPIKE", "1") == "1"
+                and not FAST_FINAL):
             zones = trim_spikes(
                 zones,
                 max_area=float(os.environ.get("XGB_SPIKE_AREA", "600")),
@@ -3955,18 +3957,19 @@ if __name__ == "__main__":
     # Coverage guarantee on the exact geometry that is about to be written.
     # One seal pass is not enough: make_valid/to_crs can expose a second set
     # of gaps, so iterate until the frame is covered.
-    for _pass in range(3):
+    for _pass in range(1 if FAST_FINAL else 3):
         _o = out.to_crs(CRS)
         _o = seal_gaps(_o, frame)
         # Sealing distributes missing pieces and can expose spikes; trim
         # them on the exact geometry, then seal once more.  Do NOT run the
         # concave merge here: three loop iterations would over-merge.
-        if OPEN_P:
+        if OPEN_P and not FAST_FINAL:
             _o = open_protrusions(_o, frame, radius=OPEN_R, min_retain=0.90)
-        if OPEN2:
+        if OPEN2 and not FAST_FINAL:
             _o = open_protrusions(_o, frame, radius=OPEN2_R,
                                   min_retain=0.60, trigger=0.04)
-        if os.environ.get("XGB_SPIKE", "1") == "1":
+        if (os.environ.get("XGB_SPIKE", "1") == "1"
+                and not FAST_FINAL):
             _o = trim_spikes(
                 _o,
                 max_area=float(os.environ.get("XGB_SPIKE_AREA", "600")),
@@ -3984,7 +3987,7 @@ if __name__ == "__main__":
             out.to_crs(CRS).geometry.map(_polygon_only).tolist())
         if frame.difference(_chk).area < 1.0:
             break
-    if COMMERCIAL and CONCAVE:
+    if COMMERCIAL and CONCAVE and not FAST_FINAL:
         # One targeted pass for the deep C-shapes that sealing can create.
         # The threshold is below every Futian zone, so clean cities keep
         # their reference-like granularity.
@@ -4012,7 +4015,7 @@ if __name__ == "__main__":
         # after the 5 m display simplification.
         # Two passes: the first bevel can expose a new short-edge corner at
         # its own endpoints; a second pass removes those residual spikes.
-        for _ in range(2):
+        for _ in range(0 if FAST_FINAL else 2):
             _o = chamfer_spikes(
                 _o,
                 max_area=float(os.environ.get("XGB_CHAMFER_AREA", "2000")),

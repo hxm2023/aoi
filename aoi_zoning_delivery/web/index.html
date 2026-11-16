@@ -47,8 +47,15 @@
     <button id="fit" class="ghost">缩放到分区结果</button>
     <label style="display:flex;align-items:center;gap:6px;margin-top:8px">
       <input id="basemap" type="checkbox" style="width:auto" checked/>
-      OSM 路网底图（离线）
+      本地 OSM 路网底图（离线）
     </label>
+    <label style="margin-top:4px;display:block">在线底图（可选，需联网）</label>
+    <select id="online-basemap" style="width:100%;margin-top:2px;padding:4px">
+      <option value="">无（仅本地离线底图）</option>
+      <option value="esri_imagery">Esri 影像</option>
+      <option value="esri_street">Esri 街道</option>
+      <option value="osm">OSM 瓦片</option>
+    </select>
     <label style="display:flex;align-items:center;gap:6px;margin-top:4px">
       <input id="reference" type="checkbox" style="width:auto"/>
       标准微网格边界
@@ -69,7 +76,8 @@ const COLORS = ["#a6cee3","#1f78b4","#b2df8a","#33a02c","#fb9a99",
                 "#e31a1c","#fdbf6f","#ff7f00","#cab2d6","#6a3d9a"];
 const EMPTY = {type:"FeatureCollection",features:[]};
 // Local MapLibre bundle + a background-only style.  Zones render on the
-// light background with zero network access; no external tile source.
+// light background with zero network access; online Esri/OSM tiles are an
+// explicit opt-in from the sidebar.
 const map = new maplibregl.Map({
   container:"map",
   style:{version:8, sources:{},
@@ -78,6 +86,37 @@ const map = new maplibregl.Map({
   preserveDrawingBuffer:true
 });
 map.addControl(new maplibregl.NavigationControl(),"top-right");
+map.addControl(new maplibregl.AttributionControl({compact:true}),"bottom-right");
+let onlineKind = "";
+const ONLINE_BASEMAPS = {
+  esri_imagery: {
+    tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+    attribution:"Esri World Imagery"
+  },
+  esri_street: {
+    tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"],
+    attribution:"Esri World Street Map"
+  },
+  osm: {
+    tiles:["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+    attribution:"© OpenStreetMap contributors"
+  }
+};
+function setOnlineBasemap(kind){
+  if(kind === onlineKind && map.getLayer("online-raster")) return;
+  if(map.getLayer("online-raster")) map.removeLayer("online-raster");
+  if(map.getSource("online-raster")) map.removeSource("online-raster");
+  onlineKind = kind || "";
+  const conf = ONLINE_BASEMAPS[kind];
+  if(!conf || !map.isStyleLoaded()) return;
+  map.addSource("online-raster",{type:"raster",tileSize:256,
+    tiles:conf.tiles, attribution:conf.attribution});
+  const before = map.getLayer("basemap-water") ? "basemap-water"
+    : (map.getLayer("zones-fill") ? "zones-fill" : undefined);
+  map.addLayer({id:"online-raster",type:"raster",source:"online-raster",
+    paint:{"raster-opacity":0.95}}, before);
+}
+window.__setOnlineBasemap = setOnlineBasemap;
 window.__map = map;
 const statusEl = document.getElementById("status");
 const progressWrap = document.getElementById("progressWrap");
@@ -144,6 +183,8 @@ function ensureLayers(){
     map.addLayer({id:"selected-line",type:"line",source:"selected",paint:{
       "line-color":"#facc15","line-width":4.0,"line-opacity":1}});
   }
+  const sel = document.getElementById("online-basemap");
+  if(sel && sel.value) setOnlineBasemap(sel.value);
   return true;
 }
 
@@ -323,6 +364,9 @@ document.getElementById("gen").onclick=()=>{
 };
 document.getElementById("fit").onclick=()=>{
   const src=map.getSource("zones"); if(src && src._data) fitZones(src._data);
+};
+document.getElementById("online-basemap").onchange=(e)=>{
+  setOnlineBasemap(e.target.value);
 };
 document.getElementById("basemap").onchange=(e)=>{
   setLayersVisible(["basemap-water","basemap-minor","basemap-major"],

@@ -275,7 +275,7 @@ def _key(b, city_mode=False, variant=""):
         "XGB_MAJOR_BLOCK", "XGB_UNION_PP_MIN", "XGB_UNION_ASPECT_MAX",
         "XGB_LEISURE_CUT", "XGB_LEISURE_MIN_KM2",
         "XGB_NARROW_W", "XGB_NARROW_A", "XGB_MIN_ZONE_KM2",
-        "XGB_RAW_LINES", "XGB_MIN_BLOCK_M2", "XGB_REF_TARGET",
+        "XGB_RAW_LINES", "XGB_MIN_BLOCK_M2", "XGB_REF_TARGET", "XGB_FAST_FINAL",
         "XGB_RURAL_REL", "XGB_WANT_RURAL", "XGB_WANT_LOW"))
     _rt = _targets_path()
     rtstamp = _rt.stat().st_mtime_ns if _rt is not None else "none"
