@@ -275,7 +275,8 @@ def _key(b, city_mode=False, variant=""):
         "XGB_MAJOR_BLOCK", "XGB_UNION_PP_MIN", "XGB_UNION_ASPECT_MAX",
         "XGB_LEISURE_CUT", "XGB_LEISURE_MIN_KM2",
         "XGB_NARROW_W", "XGB_NARROW_A", "XGB_MIN_ZONE_KM2",
-        "XGB_RAW_LINES", "XGB_MIN_BLOCK_M2", "XGB_REF_TARGET", "XGB_FAST_FINAL",
+        "XGB_RAW_LINES", "XGB_MIN_BLOCK_M2", "XGB_REF_TARGET",
+        "XGB_FAST_FINAL", "XGB_FAST_QUALITY",
         "XGB_RURAL_REL", "XGB_WANT_RURAL", "XGB_WANT_LOW"))
     _rt = _targets_path()
     rtstamp = _rt.stat().st_mtime_ns if _rt is not None else "none"
@@ -2116,6 +2117,25 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
                                                    force_merge_small,
                                                    seal_gaps_bbox,
                                                    close_slits)
+        # Large reference-targeted city units already went through the
+        # pipeline's road/merge cleanup; the extra per-zone quality passes are
+        # quadratic at this scale and are skipped.
+        _fast_q = (os.environ.get("XGB_FAST_QUALITY") == "1"
+                   and ref_target and work_area > 200)
+
+        def _noop_quality(_z, *a, **k):
+            return _z
+
+        if _fast_q:
+            repair = fill_holes = post_cleanup = merge_concave_zones = (
+                remove_needles) = final_shave = enforce_single_component_q = (
+                merge_elongated_zones) = bevel_corners = trim_thin_tails = (
+                repair_overlaps_zones) = force_merge_small = seal_gaps_bbox = (
+                close_slits) = _noop_quality
+            _attach_micro = _merge_bad_zones = _redistribute_ribbons = (
+                _merge_parallel_strips) = _split_elongated_zones = (
+                _fill_holes_and_enclaves) = _explode_multipolygons = (
+                _noop_quality)
         z["geometry"] = z.geometry.map(_poly)
         z = z[z.geometry.notna() & ~z.geometry.is_empty].reset_index(drop=True)
         try:
