@@ -40,7 +40,7 @@
     <button id="genadmin" class="primary" style="margin-top:6px">生成所选行政区</button>
     <label style="display:flex;align-items:center;gap:6px;margin-top:4px">
       <input id="quickcity" type="checkbox" style="width:auto" checked/>
-      城市快速预览（推荐，约 2–5 分钟）
+      城市/县区快速预览（推荐，约 2–5 分钟）
     </label>
     <button id="clearcache" class="ghost">清除缓存与结果</button>
     <label>或使用当前地图视野</label>
@@ -180,6 +180,10 @@ function ensureLayers(){
     map.addLayer({id:"basemap-minor",type:"line",source:"basemap",
       filter:["==",["get","klass"],"minor"],
       paint:{"line-color":"#9ca3af","line-width":0.5,"line-opacity":0.8}});
+    map.addLayer({id:"basemap-rail",type:"line",source:"basemap",
+      filter:["==",["get","klass"],"rail"],
+      paint:{"line-color":"#a78bfa","line-width":0.9,
+             "line-dasharray":[3,2],"line-opacity":0.85}});
     map.addLayer({id:"basemap-major",type:"line",source:"basemap",
       filter:["==",["get","klass"],"major"],
       paint:{"line-color":"#6b7280","line-width":1.0,"line-opacity":0.9}});
@@ -322,7 +326,7 @@ loadCatalogs();
 async function generate(bbox, scope="view", adminName=null, level=null, center=null){
   currentBbox = bbox;
   const quickEl=document.getElementById("quickcity");
-  const quick = scope==="city" && !!(quickEl && quickEl.checked);
+  const quick = (scope==="city"||scope==="county") && !!(quickEl && quickEl.checked);
   // Selecting a province starts a demo job; a quick city/county click starts
   // another.  Only the newest job may write the map/status, otherwise the
   // slower earlier job overwrites the newer result.
@@ -441,7 +445,7 @@ document.getElementById("datalayer").onchange=(e)=>{
   loadDataLayer(currentBbox, currentKey, kind);
 };
 document.getElementById("basemap").onchange=(e)=>{
-  setLayersVisible(["basemap-water","basemap-minor","basemap-major"],
+  setLayersVisible(["basemap-water","basemap-rail","basemap-minor","basemap-major"],
                    e.target.checked);
   if(e.target.checked && currentBbox) loadBasemap(currentBbox, currentKey);
 };

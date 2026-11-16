@@ -2221,6 +2221,553 @@ def _split_oversized(z, max_km2, lines=None, cell_km2=None):
     return out.reset_index(drop=True)
 
 
+def _repartition_strip_clusters(z, lines=None, max_aspect=2.5,
+                                max_angle=20.0, min_shared=30.0,
+                                min_size=3):
+    """Re-cut clusters of parallel long strips into compact blocks.
+
+    A connected cluster of three or more adjacent elongated zones with
+    parallel long axes is the "several long strips in a row" pattern.  The
+    whole cluster is unioned, rotated to its common axis, and cut across
+    that axis into near-square blocks (size preserved from the cluster's
+    mean zone area).  Boundaries that are not the cluster outline are new
+    straight cuts; this is the deliberate trade-off for removing the
+    uninterpretable strip pattern where OSM has no cross streets.
+    """
+    if z is None or len(z) < min_size:
+        return z
+    try:
+        from .quality import _merge_small_faces
+    except ImportError:
+        from commercial_zoning.quality import _merge_small_faces
+    from shapely import affinity
+    crs0 = z.crs
+    m = z.to_crs(z.estimate_utm_crs()).reset_index(drop=True)
+    geoms = list(m.geometry)
+    metas = m.drop(columns="geometry").to_dict("records")
+    rd = np.array([float(metas[i].get("road_density") or 0.0)
+                   for i in range(len(geoms))])
+    budget = area_budget()
+
+    def _mrr(g):
+        try:
+            r = g.minimum_rotated_rectangle
+            if r is None or r.is_empty or r.geom_type != "Polygon":
+                return 1.0, 0.0
+            cs = list(r.exterior.coords)[:4]
+            sides = [math.dist(cs[k], cs[(k + 1) % 4]) for k in range(4)]
+            asp = max(sides) / max(min(sides), 1e-9)
+            k = int(np.argmax(sides))
+            x0, y0 = cs[k]
+            x1, y1 = cs[(k + 1) % 4]
+            return asp, math.degrees(math.atan2(y1 - y0, x1 - x0)) % 180.0
+        except Exception:  # noqa: BLE001
+            return 1.0, 0.0
+
+    asp = np.zeros(len(geoms))
+    ori = np.zeros(len(geoms))
+    for i, g in enumerate(geoms):
+        asp[i], ori[i] = _mrr(g)
+    strip_idx = [i for i in range(len(geoms)) if asp[i] > max_aspect]
+    if len(strip_idx) < min_size:
+        return z
+    tree = shapely.STRtree([geoms[i] for i in strip_idx])
+    adj = {i: set() for i in strip_idx}
+    for pos, i in enumerate(strip_idx):
+        for jj in tree.query(geoms[i], predicate="intersects"):
+            j = strip_idx[int(jj)]
+            if j == i:
+                continue
+            d = abs(ori[i] - ori[j])
+            d = min(d, 180.0 - d)
+            if d > max_angle:
+                continue
+            shared = geoms[i].boundary.intersection(geoms[j].boundary)
+            if shared is None or shared.is_empty or shared.length <= min_shared:
+                continue
+            adj[i].add(j)
+            adj[j].add(i)
+    seen = set()
+    comps = []
+    for i in strip_idx:
+        if i in seen:
+            continue
+        stack = [i]
+        seen.add(i)
+        comp = []
+        while stack:
+            u = stack.pop()
+            comp.append(u)
+            for v in adj[u]:
+                if v not in seen:
+                    seen.add(v)
+                    stack.append(v)
+        if len(comp) >= min_size:
+            comps.append(comp)
+    if not comps:
+        return z
+    rows = []
+    replaced = set()
+    for comp in comps:
+        try:
+            u = shapely.union_all([geoms[i] for i in comp])
+        except Exception:  # noqa: BLE001
+            continue
+        if u.geom_type != "Polygon" or not u.is_valid:
+            continue
+        n = len(comp)
+        area_m2 = u.area
+        mean_cell = area_m2 / n
+        if area_m2 < 2.0 * 1e6:
+            continue
+        # Area-weighted common long-axis direction (angles modulo 180).
+        c = np.array([math.cos(math.radians(2 * ori[i])) for i in comp])
+        s = np.array([math.sin(math.radians(2 * ori[i])) for i in comp])
+        w = np.array([geoms[i].area for i in comp])
+        theta = math.degrees(math.atan2(float((s * w).sum()),
+                                        float((c * w).sum()))) / 2.0
+        cen = u.centroid
+        ur = affinity.rotate(u, -theta, origin=cen)
+        minx, miny, maxx, maxy = ur.bounds
+        width = max(maxy - miny, 1.0)
+        length = max(maxx - minx, 1.0)
+        if length < 1.15 * width:
+            continue
+        dx = mean_cell / width
+        dx = max(0.7 * width, min(2.0 * width, dx))
+        dx = max(600.0, min(4000.0, dx))
+        pieces = []
+        x = minx
+        while x < maxx:
+            cell = shapely.box(x, miny - 50.0,
+                               min(x + dx, maxx), maxy + 50.0)
+            try:
+                inter = ur.intersection(cell)
+            except Exception:  # noqa: BLE001
+                inter = None
+            if inter is not None:
+                for p in shapely.get_parts(inter):
+                    if p.geom_type == "Polygon" and p.area > 1000.0:
+                        pieces.append(p)
+            x += dx
+        if len(pieces) < 2:
+            continue
+        pieces = _merge_small_faces(pieces, max(0.03, dx * width / 1e6 * 0.06))
+        if len(pieces) < 2:
+            continue
+        host = max(comp, key=lambda i: geoms[i].area)
+        base = dict(metas[host])
+        for p in pieces:
+            pr = affinity.rotate(p, theta, origin=cen)
+            nr = dict(base)
+            nr["geometry"] = pr
+            rows.append(nr)
+        replaced.update(comp)
+    if not replaced:
+        return z
+    keep_rows = []
+    for i in range(len(geoms)):
+        if i in replaced:
+            continue
+        nr = dict(metas[i])
+        nr["geometry"] = geoms[i]
+        keep_rows.append(nr)
+    out = gpd.GeoDataFrame(keep_rows + rows, geometry="geometry", crs=m.crs)
+    out = out.to_crs(crs0).reset_index(drop=True)
+    print(f"[strip-cluster] re-cut {len(comps)} clusters "
+          f"({len(replaced)} zones -> {len(rows)} blocks)", flush=True)
+    return out
+
+
+def _repartition_strip_regions(z, grid_m=1200.0, strip_aspect=2.8,
+                               min_cells=4, min_strips=4):
+    """Find larger strip-dense regions and re-cut the whole region.
+
+    Strip-dense cells (a 1.2 km grid, dilated by one cell) are connected
+    into regions without requiring the strips themselves to touch.  Every
+    zone inside such a region is replaced by near-square blocks aligned to
+    the dominant strip direction.  This targets agricultural/industrial
+    belts where hundreds of parallel field roads produce the forbidden
+    "many strips in a row" pattern.
+    """
+    if z is None or len(z) < min_strips:
+        return z
+    from shapely import affinity
+    crs0 = z.crs
+    m = z.to_crs(z.estimate_utm_crs()).reset_index(drop=True)
+    geoms = list(m.geometry)
+    metas = m.drop(columns="geometry").to_dict("records")
+    n = len(geoms)
+
+    def _mrr(g):
+        try:
+            r = g.minimum_rotated_rectangle
+            if r is None or r.is_empty or r.geom_type != "Polygon":
+                return 1.0, 0.0
+            cs = list(r.exterior.coords)[:4]
+            sides = [math.dist(cs[k], cs[(k + 1) % 4]) for k in range(4)]
+            asp = max(sides) / max(min(sides), 1e-9)
+            k = int(np.argmax(sides))
+            x0, y0 = cs[k]
+            x1, y1 = cs[(k + 1) % 4]
+            return asp, math.degrees(math.atan2(y1 - y0, x1 - x0)) % 180.0
+        except Exception:  # noqa: BLE001
+            return 1.0, 0.0
+
+    asp = np.zeros(n)
+    ori = np.zeros(n)
+    pts = np.empty(n, dtype=object)
+    for i, g in enumerate(geoms):
+        asp[i], ori[i] = _mrr(g)
+        pts[i] = g.representative_point()
+    strips = [i for i in range(n) if asp[i] > strip_aspect]
+    if len(strips) < min_strips:
+        return z
+    minx, miny, maxx, maxy = m.total_bounds
+    nx = int(math.ceil((maxx - minx) / grid_m)) + 1
+    ny = int(math.ceil((maxy - miny) / grid_m)) + 1
+    cells = set()
+    for i in strips:
+        cx = int((pts[i].x - minx) // grid_m)
+        cy = int((pts[i].y - miny) // grid_m)
+        cells.add((cx, cy))
+    # Dilate by one cell so a belt of parallel strips becomes connected.
+    dense = set()
+    for cx, cy in cells:
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if 0 <= cx + dx < nx and 0 <= cy + dy < ny:
+                    dense.add((cx + dx, cy + dy))
+    seen = set()
+    comps = []
+    for cell in dense:
+        if cell in seen:
+            continue
+        stack = [cell]
+        seen.add(cell)
+        comp = []
+        while stack:
+            c = stack.pop()
+            comp.append(c)
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                v = (c[0] + dx, c[1] + dy)
+                if v in dense and v not in seen:
+                    seen.add(v)
+                    stack.append(v)
+        if len(comp) >= min_cells:
+            comps.append(comp)
+    if not comps:
+        return z
+    rows = []
+    replaced = set()
+    for comp in comps:
+        boxes = [shapely.box(minx + cx * grid_m, miny + cy * grid_m,
+                             minx + (cx + 1) * grid_m,
+                             miny + (cy + 1) * grid_m)
+                 for cx, cy in comp]
+        region = shapely.union_all(boxes).buffer(300.0)
+        sel = [i for i in range(n) if i not in replaced
+               and region.intersects(geoms[i])]
+        if len(sel) < min_strips:
+            continue
+        sub_strips = [i for i in sel if asp[i] > strip_aspect]
+        if len(sub_strips) < min_strips:
+            continue
+        try:
+            u = shapely.union_all([geoms[i] for i in sel])
+            u = shapely.union_all([u.buffer(2.0)]).buffer(-2.0)
+        except Exception:  # noqa: BLE001
+            continue
+        if u.is_empty:
+            continue
+        parts = [p for p in shapely.get_parts(u)
+                 if p.geom_type == "Polygon" and p.area > 1.0 * 1e6]
+        if not parts:
+            continue
+        c = np.array([math.cos(math.radians(2 * ori[i])) for i in sub_strips])
+        s = np.array([math.sin(math.radians(2 * ori[i])) for i in sub_strips])
+        w = np.array([geoms[i].area for i in sub_strips])
+        theta = math.degrees(math.atan2(float((s * w).sum()),
+                                        float((c * w).sum()))) / 2.0
+        mean_cell = sum(p.area for p in parts) / len(sel)
+        side = max(700.0, min(3000.0, math.sqrt(mean_cell)))
+        host = max(sel, key=lambda i: geoms[i].area)
+        base = dict(metas[host])
+        made = []
+        for part in parts:
+            cen = part.centroid
+            ur = affinity.rotate(part, -theta, origin=cen)
+            bx0, by0, bx1, by1 = ur.bounds
+            xx = bx0
+            while xx < bx1:
+                yy = by0
+                while yy < by1:
+                    cell = shapely.box(xx, yy, min(xx + side, bx1),
+                                       min(yy + side, by1))
+                    try:
+                        inter = ur.intersection(cell)
+                    except Exception:  # noqa: BLE001
+                        inter = None
+                    if inter is not None:
+                        for p in shapely.get_parts(inter):
+                            if (p.geom_type == "Polygon"
+                                    and p.area > 1000.0):
+                                made.append(affinity.rotate(
+                                    p, theta, origin=cen))
+                    yy += side
+                xx += side
+        if len(made) < 2:
+            continue
+        for p in made:
+            nr = dict(base)
+            nr["geometry"] = p
+            rows.append(nr)
+        replaced.update(sel)
+    if not replaced:
+        return z
+    keep_rows = []
+    for i in range(n):
+        if i in replaced:
+            continue
+        nr = dict(metas[i])
+        nr["geometry"] = geoms[i]
+        keep_rows.append(nr)
+    out = gpd.GeoDataFrame(keep_rows + rows, geometry="geometry", crs=m.crs)
+    out = out.to_crs(crs0).reset_index(drop=True)
+    print(f"[strip-region] re-cut {len(comps)} regions "
+          f"({len(replaced)} zones -> {len(rows)} blocks)", flush=True)
+    return out
+
+
+def _repartition_strip_tiles(z, tile_m=3000.0, strip_aspect=2.8,
+                             min_zones=4, min_strips=3):
+    """Re-cut 3 km tiles whose zones are mostly parallel strips.
+
+    This is the stronger fallback for agricultural/industrial grids where
+    many strip pairs are separated by third zones and never form a simple
+    adjacency cluster.  Zones whose representative point falls in a strip-
+    dominated tile are unioned and cut into near-square blocks aligned with
+    the local strip direction.
+    """
+    if z is None or len(z) < min_zones:
+        return z
+    from shapely import affinity
+    crs0 = z.crs
+    m = z.to_crs(z.estimate_utm_crs()).reset_index(drop=True)
+    geoms = list(m.geometry)
+    metas = m.drop(columns="geometry").to_dict("records")
+    n = len(geoms)
+
+    def _mrr(g):
+        try:
+            r = g.minimum_rotated_rectangle
+            if r is None or r.is_empty or r.geom_type != "Polygon":
+                return 1.0, 0.0
+            cs = list(r.exterior.coords)[:4]
+            sides = [math.dist(cs[k], cs[(k + 1) % 4]) for k in range(4)]
+            asp = max(sides) / max(min(sides), 1e-9)
+            k = int(np.argmax(sides))
+            x0, y0 = cs[k]
+            x1, y1 = cs[(k + 1) % 4]
+            return asp, math.degrees(math.atan2(y1 - y0, x1 - x0)) % 180.0
+        except Exception:  # noqa: BLE001
+            return 1.0, 0.0
+
+    asp = np.zeros(n)
+    ori = np.zeros(n)
+    rep = np.empty(n, dtype=object)
+    for i, g in enumerate(geoms):
+        asp[i], ori[i] = _mrr(g)
+        rep[i] = g.representative_point()
+    minx, miny, maxx, maxy = m.total_bounds
+    replaced = set()
+    rows = []
+    clusters = 0
+    x = minx
+    while x < maxx:
+        y = miny
+        while y < maxy:
+            ids = [i for i in range(n)
+                   if i not in replaced
+                   and x <= rep[i].x < x + tile_m
+                   and y <= rep[i].y < y + tile_m]
+            if len(ids) >= min_zones:
+                strips = [i for i in ids if asp[i] > strip_aspect]
+                if len(strips) >= min_strips and len(strips) / len(ids) >= 0.30:
+                    try:
+                        u = shapely.union_all([geoms[i] for i in ids])
+                    except Exception:  # noqa: BLE001
+                        u = None
+                    if (u is not None and u.geom_type == "Polygon"
+                            and u.is_valid and u.area > 2.0 * 1e6):
+                        c = np.array([math.cos(math.radians(2 * ori[i]))
+                                      for i in strips])
+                        s = np.array([math.sin(math.radians(2 * ori[i]))
+                                      for i in strips])
+                        w = np.array([geoms[i].area for i in strips])
+                        theta = math.degrees(math.atan2(
+                            float((s * w).sum()),
+                            float((c * w).sum()))) / 2.0
+                        cen = u.centroid
+                        ur = affinity.rotate(u, -theta, origin=cen)
+                        bx0, by0, bx1, by1 = ur.bounds
+                        mean_cell = u.area / len(ids)
+                        side = max(700.0, min(3000.0, math.sqrt(mean_cell)))
+                        pieces = []
+                        xx = bx0
+                        while xx < bx1:
+                            yy = by0
+                            while yy < by1:
+                                cell = shapely.box(xx, yy,
+                                                   min(xx + side, bx1),
+                                                   min(yy + side, by1))
+                                try:
+                                    inter = ur.intersection(cell)
+                                except Exception:  # noqa: BLE001
+                                    inter = None
+                                if inter is not None:
+                                    for p in shapely.get_parts(inter):
+                                        if (p.geom_type == "Polygon"
+                                                and p.area > 1000.0):
+                                            pieces.append(p)
+                                yy += side
+                            xx += side
+                        if len(pieces) >= 2:
+                            host = max(ids, key=lambda i: geoms[i].area)
+                            base = dict(metas[host])
+                            for p in pieces:
+                                pr = affinity.rotate(p, theta, origin=cen)
+                                nr = dict(base)
+                                nr["geometry"] = pr
+                                rows.append(nr)
+                            replaced.update(ids)
+                            clusters += 1
+            y += tile_m
+        x += tile_m
+    if not replaced:
+        return z
+    keep_rows = []
+    for i in range(n):
+        if i in replaced:
+            continue
+        nr = dict(metas[i])
+        nr["geometry"] = geoms[i]
+        keep_rows.append(nr)
+    out = gpd.GeoDataFrame(keep_rows + rows, geometry="geometry", crs=m.crs)
+    out = out.to_crs(crs0).reset_index(drop=True)
+    print(f"[strip-tile] re-cut {clusters} tiles "
+          f"({len(replaced)} zones -> {len(rows)} blocks)", flush=True)
+    return out
+
+
+def _merge_parallel_strips_post(z, target=None, max_aspect=2.5,
+                                max_angle=20.0, min_shared=30.0,
+                                passes=6, side_tol=30.0,
+                                aspect_gain=1.02, pp_keep=0.90):
+    """Merge side-by-side long-strip zones into compact blocks.
+
+    Two adjacent zones that are both elongated and whose shared border runs
+    parallel to their long axes form the "several long strips in a row"
+    pattern.  Merging only that case (not end-to-end strips) turns the pair
+    into a wider, compact block.  The union must be a single valid polygon
+    and must not become more elongated or much less compact.
+    """
+    if z is None or len(z) < 2:
+        return z
+    crs0 = z.crs
+    m = z.to_crs(z.estimate_utm_crs()).reset_index(drop=True)
+    geoms = list(m.geometry)
+    metas = m.drop(columns="geometry").to_dict("records")
+    alive = np.ones(len(geoms), dtype=bool)
+
+    def _mrr(g):
+        try:
+            r = g.minimum_rotated_rectangle
+            if r is None or r.is_empty or r.geom_type != "Polygon":
+                return 1.0, 0.0
+            cs = list(r.exterior.coords)[:4]
+            sides = [math.dist(cs[k], cs[(k + 1) % 4]) for k in range(4)]
+            asp = max(sides) / max(min(sides), 1e-9)
+            k = int(np.argmax(sides))
+            x0, y0 = cs[k]
+            x1, y1 = cs[(k + 1) % 4]
+            return asp, math.degrees(math.atan2(y1 - y0, x1 - x0)) % 180
+        except Exception:  # noqa: BLE001
+            return 1.0, 0.0
+
+    for _ in range(passes):
+        n_alive = int(alive.sum())
+        if target and n_alive <= max(1, int(target * 0.92)):
+            break
+        idx = [i for i in range(len(geoms)) if alive[i]]
+        tree = shapely.STRtree([geoms[i] for i in idx])
+        merged = 0
+        for i in idx:
+            if target and int(alive.sum()) <= max(1, int(target * 0.92)):
+                break
+            if not alive[i]:
+                continue
+            ai, oi = _mrr(geoms[i])
+            if ai <= 1.3:
+                continue
+            for jj in tree.query(geoms[i], predicate="intersects"):
+                j = idx[int(jj)]
+                if j == i or not alive[j]:
+                    continue
+                aj, oj = _mrr(geoms[j])
+                if aj <= 1.3:
+                    continue
+                # At least one member must be a strip; the other may be a
+                # compact block, which absorbs strips that sit next to it.
+                if max(ai, aj) <= max_aspect:
+                    continue
+                s_asp, o_s = (ai, oi) if ai >= aj else (aj, oj)
+                block_asp = min(ai, aj)
+                if ai > max_aspect and aj > max_aspect:
+                    d = abs(oi - oj)
+                    d = min(d, 180.0 - d)
+                    if d > max_angle:
+                        continue
+                shared = geoms[i].boundary.intersection(geoms[j].boundary)
+                if shared is None or shared.is_empty or shared.length <= min_shared:
+                    continue
+                _, so = _mrr(shared)
+                dd = abs(so - o_s)
+                dd = min(dd, 180.0 - dd)
+                # Side-by-side: the shared border runs along the long axis.
+                if dd > side_tol and dd < 180.0 - side_tol:
+                    continue
+                try:
+                    u = shapely.union_all([geoms[i], geoms[j]])
+                except Exception:  # noqa: BLE001
+                    continue
+                if u.geom_type != "Polygon" or not u.is_valid:
+                    continue
+                au, _ou = _mrr(u)
+                if au > max(block_asp * 1.25, s_asp * 0.98) * aspect_gain:
+                    continue
+                ppu = 4 * math.pi * u.area / max(u.length ** 2, 1e-9)
+                ppi = 4 * math.pi * geoms[i].area / max(geoms[i].length ** 2, 1e-9)
+                ppj = 4 * math.pi * geoms[j].area / max(geoms[j].length ** 2, 1e-9)
+                if ppu < min(ppi, ppj) * pp_keep:
+                    continue
+                keep, drop = ((i, j) if geoms[i].area >= geoms[j].area
+                              else (j, i))
+                geoms[keep] = u
+                alive[drop] = False
+                merged += 1
+                break
+        if not merged:
+            break
+    if int(alive.sum()) == len(geoms):
+        return z
+    out = _pack(z, geoms, metas, alive, m.crs)
+    out = out.to_crs(crs0)
+    print(f"[strip-merge] {int(alive.sum())}/{len(geoms)} zones after "
+          f"parallel-strip merge", flush=True)
+    return out.reset_index(drop=True)
+
+
 def _zone_classes(z, budget):
     if budget is None or "road_density" not in z.columns:
         return None
@@ -2316,6 +2863,20 @@ def _enforce_zone_count(z, target, lines=None, work_area_km2=None,
             z = _split_oversized(z, max(1.0, avg * 1.2),
                                  lines=lines, cell_km2=avg)
         z = _cap_zone_count(z, target, lines=lines, max_ratio=1.0)
+    # Structural cleanup: no side-by-side long strips.  Cluster re-cuts fix
+    # simple adjacency clusters, the region pass fixes agricultural belts
+    # where strips are separated by third zones, and the pairwise pass
+    # absorbs the remainder.  This runs for every targeted unit (including
+    # the fast path) and may stop at 92% of the target rather than recreate
+    # strips just to hit the count exactly.
+    try:
+        z = _repartition_strip_clusters(z)
+        z = _repartition_strip_regions(z)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[strip-region] skipped: {exc}")
+    z = _merge_parallel_strips_post(z, target=target)
+    if int(z.shape[0]) > int(target * 1.02):
+        z = _cap_zone_count(z, target, lines=lines, max_ratio=1.02)
     z["zone"] = np.arange(1, len(z) + 1)
     if "kind" in z.columns:
         print(f"[count-target] {len(z[z['kind'].eq('land')])} land / "
@@ -2490,7 +3051,7 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
     # Quick preview: township polygons + major-road cuts, no fine road/block
     # pipeline and no density-count enforcement.  A whole prefecture comes
     # back in a few minutes instead of ~40, which is what the map UI needs.
-    if scope == "city" and quick:
+    if scope in ("city", "county") and quick:
         return generate_admin_region(bbox, force=force, scope=scope,
                                      admin_name=admin_name, level=level,
                                      center=center, progress=progress,

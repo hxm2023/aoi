@@ -115,6 +115,8 @@ def zoning_basemap(bbox: str, key: str | None = None):
                             cls = "water"
                         elif kl == "major":
                             cls = "major"
+                        elif kl == "rail":
+                            cls = "rail"
                         else:
                             cls = "minor"
                         feats.append({"type": "Feature",
@@ -195,6 +197,23 @@ def zoning_basemap(bbox: str, key: str | None = None):
                               "geometry": mapping(g)})
     except Exception as exc:  # noqa: BLE001
         print(f"[basemap] water skipped: {exc}")
+    try:
+        rail = pyogrio.read_dataframe(
+            pbf, layer="lines", bbox=b, where="railway IS NOT NULL",
+            columns=["railway", "geometry"], on_invalid="warn")
+        if len(rail):
+            rail = rail.to_crs(3857)
+            rail["geometry"] = rail.geometry.simplify(
+                tol * 111320, preserve_topology=False)
+            rail = rail[~rail.geometry.is_empty].to_crs(4326)
+            for g in rail.geometry:
+                if g is None or g.is_empty:
+                    continue
+                feats.append({"type": "Feature",
+                              "properties": {"klass": "rail"},
+                              "geometry": mapping(g)})
+    except Exception as exc:  # noqa: BLE001
+        print(f"[basemap] rail skipped: {exc}")
     out = {"type": "FeatureCollection", "features": feats}
     if len(_BASEMAP_CACHE) > 8:
         _BASEMAP_CACHE.clear()
