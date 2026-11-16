@@ -2337,10 +2337,22 @@ def trim_spikes(zones, max_area=600.0, max_angle=55.0, min_edge=12.0,
                 if not changed:
                     break
             newparts.append(Polygon(ring, holes=poly.interiors))
-        if len(newparts) == 1:
-            out.at[idx, "geometry"] = newparts[0]
-        elif newparts:
-            out.at[idx, "geometry"] = unary_union(newparts)
+        good = []
+        for q in newparts:
+            try:
+                q = shapely.make_valid(q)
+            except Exception:  # noqa: BLE001
+                continue
+            if (q is not None and not q.is_empty
+                    and q.geom_type in ("Polygon", "MultiPolygon")):
+                good.append(q)
+        if len(good) == 1:
+            out.at[idx, "geometry"] = good[0]
+        elif good:
+            try:
+                out.at[idx, "geometry"] = unary_union(good)
+            except Exception:  # noqa: BLE001
+                out.at[idx, "geometry"] = poly
     print(f"[spike] trimmed {moved} sharp vertices")
     return out
 
@@ -2425,10 +2437,22 @@ def chamfer_spikes(zones, max_area=2000.0, max_angle=55.0, t=0.12):
                 i += 1
             newparts.append(Polygon(ring, holes=poly.interiors)
                             if len(ring) >= 4 else poly)
-        if len(newparts) == 1:
-            out.at[idx, "geometry"] = newparts[0]
-        elif newparts:
-            out.at[idx, "geometry"] = unary_union(newparts)
+        good = []
+        for q in newparts:
+            try:
+                q = shapely.make_valid(q)
+            except Exception:  # noqa: BLE001
+                continue
+            if (q is not None and not q.is_empty
+                    and q.geom_type in ("Polygon", "MultiPolygon")):
+                good.append(q)
+        if len(good) == 1:
+            out.at[idx, "geometry"] = good[0]
+        elif good:
+            try:
+                out.at[idx, "geometry"] = unary_union(good)
+            except Exception:  # noqa: BLE001
+                out.at[idx, "geometry"] = poly
     # Give each cut tip to a neighbouring zone instead of leaving a white
     # seam.  The tip's two old boundary edges touch neighbours; the bevel
     # line touches only the source zone, so the neighbour is well defined.
