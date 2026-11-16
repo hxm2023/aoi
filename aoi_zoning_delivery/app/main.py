@@ -95,16 +95,37 @@ def zoning_basemap(bbox: str, key: str | None = None):
     cache_key = f"{key or ''}|{bbox}"
     if cache_key in _BASEMAP_CACHE:
         return _BASEMAP_CACHE[cache_key]
+    try:
+        bb = tuple(float(x) for x in bbox.split(","))
+    except Exception:
+        bb = None
     if key:
         p = CACHE / key / "lines.geojson"
         if p.exists():
             try:
                 import geopandas as gpd
+                from shapely.geometry import box as _box
                 g = gpd.read_file(p)
+                if len(g) and bb is not None:
+                    g = g[g.geometry.intersects(_box(*bb))]
                 if len(g):
+                    # City-scale views need far fewer line classes: keeping
+                    # every soft road made the first basemap request tens of
+                    # MB and tens of seconds.
+                    area_km2 = ((bb[2] - bb[0]) * 111.32
+                                * abs(math.cos(math.radians(
+                                    (bb[1] + bb[3]) / 2)))
+                                * (bb[3] - bb[1]) * 110.57) if bb else 0
+                    if area_km2 > 1500:
+                        keep = ["major", "water", "rail"]
+                        tol = 60.0
+                    else:
+                        keep = ["major", "minor", "soft", "water", "rail"]
+                        tol = 12.0
+                    g = g[g["klass"].astype(str).isin(keep)]
                     g = g.to_crs(3857)
                     g["geometry"] = g.geometry.simplify(
-                        10.0, preserve_topology=False)
+                        tol, preserve_topology=False)
                     g = g[~g.geometry.is_empty].to_crs(4326)
                     feats = []
                     for geom, kl in zip(g.geometry,

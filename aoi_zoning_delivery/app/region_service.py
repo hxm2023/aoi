@@ -2243,7 +2243,21 @@ def _repartition_strip_clusters(z, lines=None, max_aspect=2.5,
     from shapely import affinity
     crs0 = z.crs
     m = z.to_crs(z.estimate_utm_crs()).reset_index(drop=True)
-    geoms = list(m.geometry)
+    geoms = []
+    for g in m.geometry:
+        try:
+            g = shapely.make_valid(g) if g is not None else None
+        except Exception:  # noqa: BLE001
+            g = None
+        if g is not None and g.geom_type != "Polygon":
+            parts = [p for p in shapely.get_parts(g)
+                     if p.geom_type == "Polygon" and p.area > 0]
+            g = max(parts, key=lambda p: p.area) if parts else None
+        geoms.append(g)
+    keep = [i for i, g in enumerate(geoms)
+            if g is not None and not g.is_empty]
+    m = m.iloc[keep].reset_index(drop=True)
+    geoms = [geoms[i] for i in keep]
     metas = m.drop(columns="geometry").to_dict("records")
     rd = np.array([float(metas[i].get("road_density") or 0.0)
                    for i in range(len(geoms))])
@@ -2282,7 +2296,14 @@ def _repartition_strip_clusters(z, lines=None, max_aspect=2.5,
             d = min(d, 180.0 - d)
             if d > max_angle:
                 continue
-            shared = geoms[i].boundary.intersection(geoms[j].boundary)
+            bi = geoms[i].boundary
+            bj = geoms[j].boundary
+            if bi is None or bj is None:
+                continue
+            try:
+                shared = bi.intersection(bj)
+            except Exception:  # noqa: BLE001
+                continue
             if shared is None or shared.is_empty or shared.length <= min_shared:
                 continue
             adj[i].add(j)
@@ -2645,7 +2666,21 @@ def _merge_parallel_strips_post(z, target=None, max_aspect=2.5,
         return z
     crs0 = z.crs
     m = z.to_crs(z.estimate_utm_crs()).reset_index(drop=True)
-    geoms = list(m.geometry)
+    geoms = []
+    for g in m.geometry:
+        try:
+            g = shapely.make_valid(g) if g is not None else None
+        except Exception:  # noqa: BLE001
+            g = None
+        if g is not None and g.geom_type != "Polygon":
+            parts = [p for p in shapely.get_parts(g)
+                     if p.geom_type == "Polygon" and p.area > 0]
+            g = max(parts, key=lambda p: p.area) if parts else None
+        geoms.append(g)
+    keep = [i for i, g in enumerate(geoms)
+            if g is not None and not g.is_empty]
+    m = m.iloc[keep].reset_index(drop=True)
+    geoms = [geoms[i] for i in keep]
     metas = m.drop(columns="geometry").to_dict("records")
     alive = np.ones(len(geoms), dtype=bool)
 
@@ -2697,7 +2732,14 @@ def _merge_parallel_strips_post(z, target=None, max_aspect=2.5,
                     d = min(d, 180.0 - d)
                     if d > max_angle:
                         continue
-                shared = geoms[i].boundary.intersection(geoms[j].boundary)
+                bi = geoms[i].boundary
+                bj = geoms[j].boundary
+                if bi is None or bj is None:
+                    continue
+                try:
+                    shared = bi.intersection(bj)
+                except Exception:  # noqa: BLE001
+                    continue
                 if shared is None or shared.is_empty or shared.length <= min_shared:
                     continue
                 _, so = _mrr(shared)
@@ -2947,12 +2989,15 @@ def generate_guangdong_aggregate(bbox, force=False, scope="province",
                 g = gpd.read_file(res["geojson"])
             # Structural cleanup before aggregation: whole strip clusters
             # become larger OSM-bounded zones; the remainder is absorbed.
-            try:
-                g = _repartition_strip_clusters(g, min_size=2)
-                g = _merge_parallel_strips_post(
-                    g, target=int(u["count"]), floor_frac=0.85)
-            except Exception as exc:  # noqa: BLE001
-                print(f"[agg] strip cleanup skipped for {u['name']}: {exc}")
+            # Units that already went through the offline cleanup can skip
+            # this with XGB_AGG_STRIP=0 to keep their counts.
+            if os.environ.get("XGB_AGG_STRIP", "1") == "1":
+                try:
+                    g = _repartition_strip_clusters(g, min_size=2)
+                    g = _merge_parallel_strips_post(
+                        g, target=int(u["count"]), floor_frac=0.85)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[agg] strip cleanup skipped for {u['name']}: {exc}")
             # Per-city count control: the reference count is the sum of the
             # city's county counts, so cap each city unit before merging.
             g = _cap_zone_count(g, u["count"], max_ratio=1.0)
@@ -2971,6 +3016,15 @@ def generate_guangdong_aggregate(bbox, force=False, scope="province",
     z = z[z.geometry.notna() & ~z.geometry.is_empty].reset_index(drop=True)
     unit_target = int(sum(u["count"] for u in units))
     z = _cap_zone_count(z, unit_target, max_ratio=1.02)
+    try:
+        from .quality import repair_overlaps_zones
+    except ImportError:
+        from commercial_zoning.quality import repair_overlaps_zones
+    try:
+        z = repair_overlaps_zones(z, min_area=0.01)
+        z = z[z.geometry.notna() & ~z.geometry.is_empty].reset_index(drop=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[agg] overlap repair skipped: {exc}")
     z["geometry"] = z.geometry.map(_poly)
     z = z[z.geometry.notna() & ~z.geometry.is_empty].reset_index(drop=True)
     z["zone"] = np.arange(1, len(z) + 1)
