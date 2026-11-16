@@ -1,0 +1,23 @@
+[
+  {
+    "name": "guangdong",
+    "bbox": [
+      109.6,
+      20.1,
+      117.3,
+      25.6
+    ],
+    "pbf": "data/china/guangdong-260918.osm.pbf"
+  },
+  {
+    "name": "beijing",
+    "bbox": [
+      115.9,
+      39.6,
+      117.0,
+      40.3
+    ],
+    "pbf": "commercial_zoning/cache/pbf/beijing.osm.pbf",
+    "url": "https://download.bbbike.org/osm/bbbike/Beijing/Beijing.osm.pbf"
+  }
+]

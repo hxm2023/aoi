@@ -1,0 +1,9 @@
+{
+  "version": "commercial-v1",
+  "trained_on": "Shenzhen pairs",
+  "n_train": 20521,
+  "n_test": 5131,
+  "test_auc": 0.8668463371256556,
+  "features": 51,
+  "positive_rate": 0.43637922968969284
+}

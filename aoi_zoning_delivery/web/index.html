@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>智域分区 · OSM 电信治理分区引擎</title>
+<link href="/web/vendor/maplibre-gl.css" rel="stylesheet"/>
+<style>
+  html,body{margin:0;height:100%;font-family:system-ui,"Microsoft YaHei",sans-serif;color:#111827}
+  #app{display:flex;height:100%}
+  #side{width:330px;padding:16px;box-sizing:border-box;background:#f8fafc;border-right:1px solid #e5e7eb;overflow:auto}
+  h1{font-size:17px;margin:0 0 4px}
+  p.sub{font-size:12px;color:#6b7280;margin:0 0 14px}
+  label{display:block;font-size:12px;color:#374151;margin:12px 0 4px}
+  select,button,input{width:100%;padding:8px;border:1px solid #d1d5db;border-radius:8px;background:#fff;font-size:13px;box-sizing:border-box}
+  button.primary{background:#2563eb;color:#fff;border-color:#2563eb;cursor:pointer}
+  button.primary:disabled{opacity:.55;cursor:wait}
+  button.ghost{margin-top:6px;cursor:pointer}
+  #status{font-size:12px;color:#374151;margin-top:12px;line-height:1.6}
+  #progressWrap{height:8px;background:#e5e7eb;border-radius:4px;overflow:hidden;margin-top:8px;display:none}
+  #progressBar{height:100%;width:0;background:#2563eb;transition:width .3s}
+  #legend{font-size:11px;color:#6b7280;margin-top:16px;line-height:1.7}
+  #map{flex:1}
+  .maplibregl-popup-content{font-size:12px;line-height:1.55}
+  .maplibregl-popup-content b{font-size:13px}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="side">
+    <h1>智域分区</h1>
+    <p class="sub">OSM 电信治理分区引擎 · 选定地区 → 生成 → 点击分区查看名称与特征</p>
+    <p class="sub">选定地区 → 从 OSM 生成 → 点击分区查看名称与特征</p>
+    <label>选择预置地区（含北京/新加坡）</label>
+    <select id="region"><option value="">加载中…</option></select>
+    <label>全国：省 → 市 → 县/区（任选一级，按 OSM 道路/水域/铁路/行政界生成）</label>
+    <select id="province"><option value="">加载中…</option></select>
+    <select id="city" style="margin-top:6px"><option value="">选择市/州（可选）…</option></select>
+    <select id="county" style="margin-top:6px"><option value="">选择县/区（可选）…</option></select>
+    <button id="genadmin" class="primary" style="margin-top:6px">生成所选行政区</button>
+    <button id="clearcache" class="ghost">清除缓存与结果</button>
+    <label>或使用当前地图视野</label>
+    <button id="gen" class="primary">生成当前视野分区</button>
+    <label>任意区域 bbox（lon0,lat0,lon1,lat1）</label>
+    <input id="bbox" placeholder="例如 113.25,23.10,113.29,23.13"/>
+    <button id="genbbox" class="ghost">按 bbox 生成</button>
+    <button id="fit" class="ghost">缩放到分区结果</button>
+    <label style="display:flex;align-items:center;gap:6px;margin-top:10px">
+      <input id="basemap" type="checkbox" style="width:auto"/> OSM 底图（需联网）
+    </label>
+    <div id="status">等待生成。</div>
+    <div id="progressWrap"><div id="progressBar"></div></div>
+    <div id="legend">
+      分区按图着色，相邻区颜色不同。<br/>
+      黄色边框 = 当前选中分区。<br/>
+      点击分区可查看面积、紧凑度、POI/建筑/路网密度、名称来源。
+    </div>
+  </aside>
+  <div id="map"></div>
+</div>
+<script src="/web/vendor/maplibre-gl.js"></script>
+<script>
+const COLORS = ["#a6cee3","#1f78b4","#b2df8a","#33a02c","#fb9a99",
+                "#e31a1c","#fdbf6f","#ff7f00","#cab2d6","#6a3d9a"];
+const EMPTY = {type:"FeatureCollection",features:[]};
+// Local MapLibre bundle + a background-only style.  The OSM raster basemap
+// is opt-in: a remote tile source that is slow/blocked keeps
+// isStyleLoaded() false forever, which used to delay the map "load" event
+// (and therefore the click handlers).  Zones render on the light background
+// with zero network, and the basemap can be switched on later.
+const map = new maplibregl.Map({
+  container:"map",
+  style:{version:8, sources:{},
+         layers:[{id:"bg",type:"background",paint:{"background-color":"#f1f5f9"}}]},
+  center:[114.06,22.54], zoom:11,
+  preserveDrawingBuffer:true
+});
+function setBasemap(on){
+  if(on){
+    if(!map.getSource("osm")){
+      map.addSource("osm",{type:"raster",tileSize:256,
+        tiles:["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+        attribution:"© OpenStreetMap"});
+    }
+    if(!map.getLayer("osm")){
+      const before = map.getLayer("zones-fill") ? "zones-fill" : undefined;
+      map.addLayer({id:"osm",type:"raster",source:"osm",
+                    paint:{"raster-opacity":0.85}}, before);
+    }
+  }else{
+    if(map.getLayer("osm")) map.removeLayer("osm");
+    if(map.getSource("osm")) map.removeSource("osm");
+  }
+}
+map.addControl(new maplibregl.NavigationControl(),"top-right");
+window.__map = map;
+const statusEl = document.getElementById("status");
+const progressWrap = document.getElementById("progressWrap");
+const progressBar = document.getElementById("progressBar");
+const regionEl = document.getElementById("region");
+const provinceEl = document.getElementById("province");
+const cityEl = document.getElementById("city");
+const countyEl = document.getElementById("county");
+const bboxEl = document.getElementById("bbox");
+const genEl = document.getElementById("gen");
+const genBboxEl = document.getElementById("genbbox");
+let catalog = [];
+let provinces = [];
+let admin = null;
+let genSeq = 0;
+let popup = null;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function escapeHtml(v){return String(v ?? "").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+
+function popupHtml(p){
+  const rows = [
+    ["面积 km²", p.area_km2 != null ? Number(p.area_km2).toFixed(3) : ""],
+    ["紧凑度 pp", p.pp != null ? Number(p.pp).toFixed(2) : ""],
+    ["POI 密度", p.poi_density], ["建筑密度", p.building_density],
+    ["路网密度", p.road_density], ["城市化", p.urban_score],
+    ["图块数", p.block_count], ["名称来源", p.name_src], ["分区号", p.zone],
+  ];
+  return `<div><b>${escapeHtml(p.name ?? "未命名")}</b><br/>`
+    + rows.filter(([,v]) => v !== "" && v != null)
+        .map(([k,v]) => `${k}: ${escapeHtml(v)}`).join("<br/>") + `</div>`;
+}
+
+function ensureLayers(){
+  if (map.getSource("zones")) return true;
+  // A cached generation can finish before the first map frame; adding a
+  // source to a style that is not ready throws "Style is not done loading".
+  if (!map.isStyleLoaded()) return false;
+  map.addSource("zones",{type:"geojson",data:EMPTY});
+  map.addLayer({id:"zones-fill",type:"fill",source:"zones",paint:{
+    "fill-color":["match",["coalesce",["get","color_idx"],["%",["to-number",["get","zone"]],10]],
+      0,COLORS[0],1,COLORS[1],2,COLORS[2],3,COLORS[3],4,COLORS[4],
+      5,COLORS[5],6,COLORS[6],7,COLORS[7],8,COLORS[8],9,COLORS[9],"#cccccc"],
+    "fill-opacity":0.62}});
+  map.addLayer({id:"zones-line",type:"line",source:"zones",paint:{
+    "line-color":"#ffffff","line-width":1.1,"line-opacity":0.9}});
+  map.addLayer({id:"zones-outline",type:"line",source:"zones",paint:{
+    "line-color":"#374151","line-width":0.55,"line-opacity":0.9}});
+  map.addSource("selected",{type:"geojson",data:EMPTY});
+  map.addLayer({id:"selected-line",type:"line",source:"selected",paint:{
+    "line-color":"#facc15","line-width":4.0,"line-opacity":1}});
+  return true;
+}
+
+map.on("load", ensureLayers);
+// Bind the click handler immediately, not inside map.on("load"): with a
+// remote basemap the style can stay "loading" for seconds and clicks would
+// silently do nothing.  Query the layer at event time instead.
+map.on("click",(e)=>{
+  const feats = map.queryRenderedFeatures(e.point,{layers:["zones-fill"]});
+  if(!feats.length) return;
+  const f = feats[0];
+  map.getSource("selected").setData({type:"FeatureCollection",features:[f]});
+  popup?.remove();
+  popup = new maplibregl.Popup({closeButton:true}).setLngLat(e.lngLat)
+    .setHTML(popupHtml(f.properties||{})).addTo(map);
+});
+map.on("mousemove",(e)=>{
+  map.getCanvas().style.cursor =
+    map.queryRenderedFeatures(e.point,{layers:["zones-fill"]}).length ? "pointer" : "";
+});
+
+// Catalog loading must not wait for the map's WebGL "load" event: on slow or
+// software-rendered browsers that event can lag for seconds and the dropdowns
+// looked empty/broken until the basemap finished.
+function loadCatalogs(){
+  fetch("/zoning/catalog").then(r=>r.json()).then(d=>{
+    catalog=d.regions||[];
+    regionEl.innerHTML='<option value="">选择地区生成…</option>'+
+      catalog.map(r=>`<option value="${r.id}">${r.name}</option>`).join("");
+  }).catch(()=>{regionEl.innerHTML='<option value="">目录加载失败</option>'});
+  fetch("/zoning/provinces").then(r=>r.json()).then(d=>{
+    provinces=d.provinces||[];
+    provinceEl.innerHTML='<option value="">选择省份…</option>'+
+      provinces.map(p=>`<option value="${p.id}">${p.name}${
+        p.available===false ? "（无数据）" : ""}</option>`).join("");
+    const gd=provinces.find(p=>p.id==="guangdong");
+    if(gd && gd.available!==false){
+      provinceEl.value="guangdong";
+      provinceEl.dispatchEvent(new Event("change"));
+    }
+  }).catch(()=>{provinceEl.innerHTML='<option value="">省份目录加载失败</option>'});
+}
+loadCatalogs();
+
+async function generate(bbox, scope="view", adminName=null, level=null, center=null){
+  // Selecting a province starts a demo job; a quick city/county click starts
+  // another.  Only the newest job may write the map/status, otherwise the
+  // slower earlier job overwrites the newer result.
+  const my = ++genSeq;
+  genEl.disabled=true; genBboxEl.disabled=true;
+  let eta = 30;
+  try{
+    const v = String(bbox).split(",").map(Number);
+    const lat = (v[1]+v[3])/2;
+    const km2 = (v[2]-v[0])*111.32*Math.cos(lat*Math.PI/180)*(v[3]-v[1])*110.57;
+    if(scope==="view") eta = Math.max(20, 20 + km2*0.8);
+    else if(scope==="province") eta = Math.max(30, 30 + km2*0.0002);
+    else if(scope==="city") eta = Math.max(60, 60 + km2*0.02);
+    else eta = Math.max(30, 30 + km2*0.8);
+  }catch(e){}
+  const fmt=(x)=>x<90?`${Math.round(x)} s`:`${(x/60).toFixed(1)} 分钟`;
+  progressWrap.style.display="block"; progressBar.style.width="0%";
+  statusEl.textContent = `提交任务… 预计约 ${fmt(eta)}`;
+  const t0=Date.now();
+  try{
+    // Delegate to the job API so a 30-60 s generation cannot look like a
+    // hung request; poll once per second and show elapsed time.
+    const start=await fetch("/zoning/jobs",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({bbox, scope, admin_name:adminName, level, center})});
+    const job=await start.json();
+    if(!start.ok) throw new Error(job.detail||start.status);
+    if(my!==genSeq) return;
+    let j=null, mem=null;
+    for(;;){
+      await sleep(900);
+      if(my!==genSeq) return;
+      const st=await fetch(`/zoning/jobs/${job.job_id}`).then(r=>r.json());
+      mem = st.memory_mb ?? mem;
+      if(st.status==="done"){ j=st.result; break; }
+      if(st.status==="error") throw new Error(st.error||"生成失败");
+      const el=Math.round((Date.now()-t0)/1000);
+      const pct = st.progress != null ? Math.max(0, Math.min(100, Number(st.progress)))
+                                      : Math.min(95, Math.round(el/Math.max(eta,1)*100));
+      progressBar.style.width=pct+"%";
+      statusEl.textContent=`${st.stage || "生成中"} · ${Math.round(pct)}%`
+        + ` · 已用 ${el} s`
+        + (mem!=null?` · 内存 ${mem} MB`:"");
+    }
+    const fc=await fetch(`/zoning/${j.key}`).then(r=>r.json());
+    if(my!==genSeq) return;
+    if(!ensureLayers()){
+      await new Promise((r)=>map.once("load", r));
+      if(my!==genSeq) return;
+      if(!ensureLayers()) throw new Error("地图样式未就绪");
+    }
+    map.getSource("zones").setData(fc);
+    map.getSource("selected").setData(EMPTY);
+    const m=j.meta||{};
+    progressBar.style.width="100%";
+    statusEl.innerHTML=`已生成 <b>${j.zones}</b> 个分区`
+      + (m.quality_score!=null?`，几何分 <b>${m.quality_score}</b>`:"")
+      + (m.bad_zones!=null?`，病态区 <b>${m.bad_zones}</b>`:"")
+      + (m.engine?`，${m.engine}`:"")
+      + (j.cached?"（缓存）":`，耗时 ${m.elapsed_s??"?"} s`)
+      + (mem!=null?`，内存 ${mem} MB`:"");
+    setTimeout(()=>{progressWrap.style.display="none";},2500);
+    fitZones(fc);
+  }catch(e){ if(my===genSeq){ statusEl.textContent="生成失败："+e.message; progressWrap.style.display="none"; } }
+  finally{
+    if(my===genSeq){ genEl.disabled=false; genBboxEl.disabled=false; }
+  }
+}
+
+function fitZones(fc){
+  if(!fc.features || !fc.features.length) return;
+  const b=new maplibregl.LngLatBounds();
+  const walk=(c)=>{ if(typeof c[0]==="number") b.extend(c); else c.forEach(walk); };
+  fc.features.forEach(f=>walk(f.geometry.coordinates));
+  map.fitBounds(b,{padding:40,duration:600});
+}
+
+
+function fillCounties(city){
+  const list = city ? (admin?.counties||[]).filter(c =>
+      c.center[0]>=city.bbox[0] && c.center[0]<=city.bbox[2] &&
+      c.center[1]>=city.bbox[1] && c.center[1]<=city.bbox[3])
+    : (admin?.counties||[]);
+  countyEl.innerHTML='<option value="">选择县/区（可选）…</option>'+
+    list.map((c,i)=>`<option value="${i}">${escapeHtml(c.name)}</option>`).join("");
+  countyEl._list = list;
+}
+
+document.getElementById("gen").onclick=()=>{
+  const b=map.getBounds();
+  generate([b.getWest(),b.getSouth(),b.getEast(),b.getNorth()].map(x=>+x.toFixed(5)).join(","), "view");
+};
+document.getElementById("fit").onclick=()=>{
+  const src=map.getSource("zones"); if(src && src._data) fitZones(src._data);
+};
+document.getElementById("basemap").onchange=(e)=>setBasemap(e.target.checked);
+regionEl.onchange=()=>{
+  const r=catalog.find(x=>x.id===regionEl.value);
+  if(r) generate(r.bbox.join(","), "view");
+  regionEl.value="";
+};
+provinceEl.onchange=async ()=>{
+  const p=provinces.find(x=>x.id===provinceEl.value);
+  if(!p) return;
+  if(p.available===false){
+    admin=null;
+    cityEl.innerHTML='<option value="">无数据</option>';
+    countyEl.innerHTML='<option value="">无数据</option>';
+    statusEl.textContent=`${p.name}目前无本地 OSM 数据，暂不支持`;
+    progressWrap.style.display="none";
+    return;
+  }
+  cityEl.innerHTML='<option value="">加载市/州…</option>';
+  countyEl.innerHTML='<option value="">选择县/区（可选）…</option>';
+  admin=null;
+  statusEl.textContent=`加载 ${p.name} 的市/县目录…（首次需下载省级 PBF）`;
+  try{
+    const r=await fetch(`/zoning/admin/${p.id}`);
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.detail||r.status);
+    admin=d;
+    cityEl.innerHTML='<option value="">选择市/州（可选）…</option>'+
+      (d.cities||[]).map((c,i)=>`<option value="${i}">${escapeHtml(c.name)}</option>`).join("");
+    fillCounties(null);
+    statusEl.textContent=`${p.name}：${d.cities.length} 个市/州，${d.counties.length} 个县/区`;
+  }catch(e){
+    cityEl.innerHTML='<option value="">目录加载失败</option>';
+    statusEl.textContent="市/县目录加载失败："+e.message;
+    return;
+  }
+  statusEl.textContent=`已选择 ${p.name}，可继续选市/县，或直接点“生成所选行政区”`;
+};
+cityEl.onchange=()=>{
+  if(!admin) return;
+  if(cityEl.value===""){ fillCounties(null); return; }
+  const c=admin.cities[+cityEl.value];
+  if(!c) return;
+  fillCounties(c);
+  statusEl.textContent=`已选择 ${c.name}，可继续选县/区，或直接生成`;
+};
+countyEl.onchange=()=>{
+  const c=(countyEl._list||[])[+countyEl.value];
+  if(c) statusEl.textContent=`已选择 ${c.name}，点“生成所选行政区”开始`;
+};
+document.getElementById("clearcache").onclick=async()=>{
+  try{
+    const r=await fetch("/zoning/cache/clear",{method:"POST"});
+    const d=await r.json();
+    if(map.getSource("zones")) map.getSource("zones").setData(EMPTY);
+    if(map.getSource("selected")) map.getSource("selected").setData(EMPTY);
+    progressWrap.style.display="none";
+    statusEl.textContent=`已清除 ${d.removed} 个生成缓存`;
+  }catch(e){ statusEl.textContent="清除失败："+e.message; }
+};
+document.getElementById("genadmin").onclick=()=>{
+  const p=provinces.find(x=>x.id===provinceEl.value);
+  if(!p){ statusEl.textContent="请先选择省/市/县"; return; }
+  if(p.available===false){
+    statusEl.textContent=`${p.name}目前无本地 OSM 数据，暂不支持`;
+    return;
+  }
+  const c=(cityEl.value==="") ? null : admin?.cities[+cityEl.value];
+  const co=(countyEl.value==="") ? null : (countyEl._list||[])[+countyEl.value];
+  if(co) generate(co.bbox.join(","), "county", co.name, co.level, co.center);
+  else if(c && c.level === "5"){
+    // Whole prefectures are huge; default to a ~12x11 km core that uses the
+    // cleaned-line cutting + XGB merge path and yields neighbourhood zones.
+    const cx=c.center[0], cy=c.center[1];
+    generate([cx-0.06,cy-0.05,cx+0.06,cy+0.05].join(","), "core",
+             c.name, c.level, c.center);
+  }
+  else if(c) generate(c.bbox.join(","), "county", c.name, c.level, c.center);
+  else generate(p.bbox.join(","), "province", p.name, "4",
+                [(p.bbox[0]+p.bbox[2])/2, (p.bbox[1]+p.bbox[3])/2]);
+};
+genBboxEl.onclick=()=>{
+  const b=bboxEl.value.trim();
+  if(b) generate(b, "view");
+};
+</script>
+</body>
+</html>
