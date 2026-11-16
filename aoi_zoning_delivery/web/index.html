@@ -45,12 +45,20 @@
     <input id="bbox" placeholder="例如 113.25,23.10,113.29,23.13"/>
     <button id="genbbox" class="ghost">按 bbox 生成</button>
     <button id="fit" class="ghost">缩放到分区结果</button>
+    <label style="display:flex;align-items:center;gap:6px;margin-top:8px">
+      <input id="basemap" type="checkbox" style="width:auto" checked/>
+      OSM 路网底图（离线）
+    </label>
+    <label style="display:flex;align-items:center;gap:6px;margin-top:4px">
+      <input id="reference" type="checkbox" style="width:auto"/>
+      标准微网格边界
+    </label>
     <div id="status">等待生成。</div>
     <div id="progressWrap"><div id="progressBar"></div></div>
     <div id="legend">
-      分区按图着色，相邻区颜色不同。<br/>
-      黄色边框 = 当前选中分区。<br/>
-      点击分区可查看面积、紧凑度、POI/建筑/路网密度、名称来源。
+      分区仅显示边界线；黄色边框 = 当前选中分区。<br/>
+      点击分区可查看面积、紧凑度、POI/建筑/路网密度、名称来源。<br/>
+      标准微网格只用于本地对比，不参与分区推理。
     </div>
   </aside>
   <div id="map"></div>
@@ -104,23 +112,38 @@ function popupHtml(p){
 }
 
 function ensureLayers(){
-  if (map.getSource("zones")) return true;
   // A cached generation can finish before the first map frame; adding a
   // source to a style that is not ready throws "Style is not done loading".
   if (!map.isStyleLoaded()) return false;
-  map.addSource("zones",{type:"geojson",data:EMPTY});
-  map.addLayer({id:"zones-fill",type:"fill",source:"zones",paint:{
-    "fill-color":["match",["coalesce",["get","color_idx"],["%",["to-number",["get","zone"]],10]],
-      0,COLORS[0],1,COLORS[1],2,COLORS[2],3,COLORS[3],4,COLORS[4],
-      5,COLORS[5],6,COLORS[6],7,COLORS[7],8,COLORS[8],9,COLORS[9],"#cccccc"],
-    "fill-opacity":0.62}});
-  map.addLayer({id:"zones-line",type:"line",source:"zones",paint:{
-    "line-color":"#ffffff","line-width":1.1,"line-opacity":0.9}});
-  map.addLayer({id:"zones-outline",type:"line",source:"zones",paint:{
-    "line-color":"#374151","line-width":0.55,"line-opacity":0.9}});
-  map.addSource("selected",{type:"geojson",data:EMPTY});
-  map.addLayer({id:"selected-line",type:"line",source:"selected",paint:{
-    "line-color":"#facc15","line-width":4.0,"line-opacity":1}});
+  if(!map.getSource("basemap")){
+    map.addSource("basemap",{type:"geojson",data:EMPTY});
+    map.addLayer({id:"basemap-water",type:"line",source:"basemap",
+      filter:["==",["get","klass"],"water"],
+      paint:{"line-color":"#93c5fd","line-width":0.8,"line-opacity":0.9}});
+    map.addLayer({id:"basemap-minor",type:"line",source:"basemap",
+      filter:["==",["get","klass"],"minor"],
+      paint:{"line-color":"#9ca3af","line-width":0.5,"line-opacity":0.8}});
+    map.addLayer({id:"basemap-major",type:"line",source:"basemap",
+      filter:["==",["get","klass"],"major"],
+      paint:{"line-color":"#6b7280","line-width":1.0,"line-opacity":0.9}});
+  }
+  if(!map.getSource("reference")){
+    map.addSource("reference",{type:"geojson",data:EMPTY});
+    map.addLayer({id:"reference-lines",type:"line",source:"reference",
+      paint:{"line-color":"#dc2626","line-width":0.7,"line-opacity":0.75}});
+    map.setLayoutProperty("reference-lines","visibility","none");
+  }
+  if(!map.getSource("zones")){
+    map.addSource("zones",{type:"geojson",data:EMPTY});
+    // Transparent fill keeps click hit-testing without drawing colour.
+    map.addLayer({id:"zones-fill",type:"fill",source:"zones",
+      paint:{"fill-color":"#000000","fill-opacity":0}});
+    map.addLayer({id:"zones-line",type:"line",source:"zones",paint:{
+      "line-color":"#111827","line-width":0.9,"line-opacity":0.95}});
+    map.addSource("selected",{type:"geojson",data:EMPTY});
+    map.addLayer({id:"selected-line",type:"line",source:"selected",paint:{
+      "line-color":"#facc15","line-width":4.0,"line-opacity":1}});
+  }
   return true;
 }
 
@@ -141,6 +164,43 @@ map.on("mousemove",(e)=>{
   map.getCanvas().style.cursor =
     map.queryRenderedFeatures(e.point,{layers:["zones-fill"]}).length ? "pointer" : "";
 });
+
+let currentBbox = null;
+let currentKey = null;
+
+async function loadBasemap(bbox, key){
+  if(!bbox) return;
+  try{
+    const q = `/zoning/basemap?bbox=${encodeURIComponent(bbox)}`
+      + (key?`&key=${encodeURIComponent(key)}`:"");
+    const r = await fetch(q);
+    if(!r.ok) return;
+    const fc = await r.json();
+    if(map.getSource("basemap")) map.getSource("basemap").setData(fc);
+  }catch(e){ /* offline basemap is optional */ }
+}
+
+async function loadReference(bbox){
+  if(!bbox) return;
+  try{
+    const r = await fetch(`/zoning/reference?bbox=${encodeURIComponent(bbox)}`);
+    if(!r.ok){
+      statusEl.textContent = r.status===404
+        ? "未找到标准微网格 CSV（请放到 data/reference/）"
+        : "标准微网格加载失败";
+      return;
+    }
+    const fc = await r.json();
+    if(map.getSource("reference")) map.getSource("reference").setData(fc);
+    statusEl.textContent = `标准微网格边界已加载（${(fc.features||[]).length} 条）`;
+  }catch(e){ statusEl.textContent = "标准微网格加载失败"; }
+}
+
+function setLayersVisible(ids, on){
+  ids.forEach((id)=>{
+    if(map.getLayer(id)) map.setLayoutProperty(id,"visibility",on?"visible":"none");
+  });
+}
 
 // Catalog loading must not wait for the map's WebGL "load" event: on slow or
 // software-rendered browsers that event can lag for seconds and the dropdowns
@@ -166,6 +226,7 @@ function loadCatalogs(){
 loadCatalogs();
 
 async function generate(bbox, scope="view", adminName=null, level=null, center=null){
+  currentBbox = bbox;
   // Selecting a province starts a demo job; a quick city/county click starts
   // another.  Only the newest job may write the map/status, otherwise the
   // slower earlier job overwrites the newer result.
@@ -209,6 +270,7 @@ async function generate(bbox, scope="view", adminName=null, level=null, center=n
         + ` · 已用 ${el} s`
         + (mem!=null?` · 内存 ${mem} MB`:"");
     }
+    currentKey = j.key;
     const fc=await fetch(`/zoning/${j.key}`).then(r=>r.json());
     if(my!==genSeq) return;
     if(!ensureLayers()){
@@ -228,6 +290,8 @@ async function generate(bbox, scope="view", adminName=null, level=null, center=n
       + (mem!=null?`，内存 ${mem} MB`:"");
     setTimeout(()=>{progressWrap.style.display="none";},2500);
     fitZones(fc);
+    if(document.getElementById("basemap").checked) loadBasemap(bbox, currentKey);
+    if(document.getElementById("reference").checked) loadReference(bbox);
   }catch(e){ if(my===genSeq){ statusEl.textContent="生成失败："+e.message; progressWrap.style.display="none"; } }
   finally{
     if(my===genSeq){ genEl.disabled=false; genBboxEl.disabled=false; }
@@ -259,6 +323,18 @@ document.getElementById("gen").onclick=()=>{
 };
 document.getElementById("fit").onclick=()=>{
   const src=map.getSource("zones"); if(src && src._data) fitZones(src._data);
+};
+document.getElementById("basemap").onchange=(e)=>{
+  setLayersVisible(["basemap-water","basemap-minor","basemap-major"],
+                   e.target.checked);
+  if(e.target.checked && currentBbox) loadBasemap(currentBbox, currentKey);
+};
+document.getElementById("reference").onchange=(e)=>{
+  setLayersVisible(["reference-lines"], e.target.checked);
+  if(e.target.checked){
+    if(currentBbox) loadReference(currentBbox);
+    else statusEl.textContent="请先生成区域，再显示标准微网格边界";
+  }
 };
 regionEl.onchange=()=>{
   const r=catalog.find(x=>x.id===regionEl.value);
@@ -329,11 +405,9 @@ document.getElementById("genadmin").onclick=()=>{
   const co=(countyEl.value==="") ? null : (countyEl._list||[])[+countyEl.value];
   if(co) generate(co.bbox.join(","), "county", co.name, co.level, co.center);
   else if(c && c.level === "5"){
-    // Whole prefectures are huge; default to a ~12x11 km core that uses the
-    // cleaned-line cutting + XGB merge path and yields neighbourhood zones.
-    const cx=c.center[0], cy=c.center[1];
-    generate([cx-0.06,cy-0.05,cx+0.06,cy+0.05].join(","), "core",
-             c.name, c.level, c.center);
+    // Whole prefecture: the backend aggregates reference-targeted county
+    // partitions, so the city count is the sum of its county counts.
+    generate(c.bbox.join(","), "city", c.name, c.level, c.center);
   }
   else if(c) generate(c.bbox.join(","), "county", c.name, c.level, c.center);
   else generate(p.bbox.join(","), "province", p.name, "4",

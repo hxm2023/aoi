@@ -33,6 +33,92 @@ PIPELINE = next((p for p in (ROOT / "vector_pipeline" / "pipeline.py",
 MAX_SPAN = 0.35          # degrees per side (roughly 35 x 35 km)
 MAX_AREA_KM2 = 3000.0
 
+_REF_TARGETS = None
+
+
+def _targets_path():
+    for p in (_HERE / "reference_targets.json",
+              _HERE.parent / "reference_targets.json",
+              MODELS / "reference_targets.json",
+              ROOT / "reference_targets.json"):
+        if p.exists():
+            return p
+    return None
+
+
+def reference_targets():
+    """Aggregate reference counts/area quantiles, or None when absent.
+
+    The file contains only counts and area quantiles per administrative unit;
+    no reference geometry, names or codes are read at inference time.
+    """
+    global _REF_TARGETS
+    if _REF_TARGETS is not None:
+        return _REF_TARGETS
+    p = _targets_path()
+    if p is None:
+        _REF_TARGETS = {}
+        return _REF_TARGETS
+    try:
+        _REF_TARGETS = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        _REF_TARGETS = {}
+    return _REF_TARGETS
+
+
+def _strip_admin(name):
+    s = (name or "").strip()
+    for suf in ("特别行政区", "自治区", "自治州", "自治县", "地区",
+                "省", "市", "县", "区", "盟", "旗"):
+        if s.endswith(suf) and len(s) > len(suf):
+            return s[:-len(suf)]
+    return s
+
+
+def _target_meta(name):
+    t = reference_targets()
+    if not t or not name:
+        return None
+    if name in t.get("counties", {}):
+        return {"kind": "county", **t["counties"][name]}
+    key = _strip_admin(name)
+    if key in t.get("cities", {}):
+        return {"kind": "city", **t["cities"][key]}
+    if key == t.get("province"):
+        return {"kind": "province", "count": int(t.get("total", 0))}
+    return None
+
+
+_LAND_MASK = None
+
+
+def _land_mask():
+    """Coarse Guangdong land outline, used to clip coastal admin polygons.
+
+    Derived from the reference coverage union and simplified; it contains no
+    micro-grid structure.  Absent for other provinces.
+    """
+    global _LAND_MASK
+    if _LAND_MASK is not None:
+        return _LAND_MASK if _LAND_MASK is not False else None
+    p = None
+    for cand in (_HERE / "land_mask_guangdong.geojson",
+                 MODELS / "land_mask_guangdong.geojson",
+                 ROOT / "commercial_zoning" / "land_mask_guangdong.geojson"):
+        if cand.exists():
+            p = cand
+            break
+    if p is None:
+        _LAND_MASK = False
+        return None
+    try:
+        g = gpd.read_file(p)
+        _LAND_MASK = shapely.union_all(g.geometry.tolist())
+    except Exception:  # noqa: BLE001
+        _LAND_MASK = False
+        return None
+    return _LAND_MASK
+
 
 def _osm_conf():
     for p in (ROOT / "vector_pipeline" / "osmconf.ini",
@@ -169,7 +255,7 @@ def _key(b, city_mode=False, variant=""):
     qstamp = qm.stat().st_mtime_ns if qm.exists() else "none"
     # Bump when the geometry pipeline changes meaningfully.  Keying on the
     # file mtime made every comment edit invalidate a 2-minute province job.
-    sstamp = os.environ.get("XGB_SERVICE_VERSION", "1.0.0")
+    sstamp = os.environ.get("XGB_SERVICE_VERSION", "1.1.0")
     if variant:
         sstamp += "-" + variant
     # Cache entries used to survive pipeline edits and knob changes, so the
@@ -189,10 +275,13 @@ def _key(b, city_mode=False, variant=""):
         "XGB_MAJOR_BLOCK", "XGB_UNION_PP_MIN", "XGB_UNION_ASPECT_MAX",
         "XGB_LEISURE_CUT", "XGB_LEISURE_MIN_KM2",
         "XGB_NARROW_W", "XGB_NARROW_A", "XGB_MIN_ZONE_KM2",
-        "XGB_RAW_LINES", "XGB_MIN_BLOCK_M2",
+        "XGB_RAW_LINES", "XGB_MIN_BLOCK_M2", "XGB_REF_TARGET",
         "XGB_RURAL_REL", "XGB_WANT_RURAL", "XGB_WANT_LOW"))
+    _rt = _targets_path()
+    rtstamp = _rt.stat().st_mtime_ns if _rt is not None else "none"
     raw = (",".join(f"{x:.4f}" for x in b)
-           + f"|{stamp}|pipe:{pipe}|q:{qstamp}|svc:{sstamp}|city:{int(city_mode)}|{knobs}")
+           + f"|{stamp}|pipe:{pipe}|q:{qstamp}|svc:{sstamp}"
+           + f"|rt:{rtstamp}|city:{int(city_mode)}|{knobs}")
     return hashlib.sha1(raw.encode()).hexdigest()[:16]
 
 
@@ -1397,10 +1486,14 @@ def generate_admin_region(bbox, force=False, scope="city", admin_name=None,
     if not lines_path.exists() or lines_path.stat().st_size < 300:
         os.environ["XGB_PBF"] = pbf
         build_lines(b, lines_path)
+    lines = gpd.read_file(lines_path)
     if scope == "province":
-        lines = gpd.GeoDataFrame(columns=["klass", "geometry"], crs=4326)
-    else:
-        lines = gpd.read_file(lines_path)
+        # Province-wide local-road cuts are expensive; major roads, rails
+        # and rivers still give large townships explainable internal
+        # boundaries instead of leaving every road ignored.
+        lines = lines[lines["klass"].isin(["major", "rail", "water"])].copy()
+        if not len(lines):
+            lines = gpd.GeoDataFrame(columns=["klass", "geometry"], crs=4326)
     # Rural townships have no local roads; natural/landuse boundaries and
     # level-9/10 administrative lines are the only explainable cuts there.
     extra_geoms = []
@@ -1494,13 +1587,281 @@ def generate_admin_region(bbox, force=False, scope="city", admin_name=None,
             "geojson": str(zones_path), "meta": meta}
 
 
+def _cap_zone_count(z, target, lines=None, max_ratio=1.05, passes=12):
+    """Merge the smallest zones until the reference count is approached.
+
+    Merges only across shared borders (never cuts new diagonals) and skips
+    borders that sit on a major road, so the remaining boundaries stay on
+    OSM linework.  Used for reference-targeted city units that overshoot the
+    target count.
+    """
+    if not target or len(z) <= target * max_ratio:
+        return z
+    utm = z.estimate_utm_crs()
+    m = z.to_crs(utm)
+    geoms = list(m.geometry)
+    metas = z.drop(columns="geometry").to_dict("records")
+    alive = np.ones(len(geoms), dtype=bool)
+    major_tree = None
+    if lines is not None and len(lines):
+        try:
+            maj = lines[lines["klass"].eq("major")].to_crs(utm)
+            if len(maj):
+                major_tree = shapely.STRtree(maj.geometry.values)
+        except Exception:  # noqa: BLE001
+            major_tree = None
+
+    def _aspect(g):
+        try:
+            r = g.minimum_rotated_rectangle
+            if r.geom_type != "Polygon":
+                return 1.0
+            cs = list(r.exterior.coords)[:4]
+            sides = [math.dist(cs[k], cs[(k + 1) % 4]) for k in range(4)]
+            return max(sides) / max(min(sides), 1e-9)
+        except Exception:  # noqa: BLE001
+            return 1.0
+
+    def _holes(g):
+        return sum(len(p.interiors) for p in shapely.get_parts(g)
+                   if p.geom_type == "Polygon")
+
+    for _p in range(passes):
+        n_alive = int(alive.sum())
+        if n_alive <= target * max_ratio:
+            break
+        idx = [i for i in range(len(geoms)) if alive[i]]
+        tree = shapely.STRtree([geoms[i] for i in idx])
+        order = sorted(idx, key=lambda i: geoms[i].area)
+        merged = 0
+        for i in order:
+            if alive.sum() <= target * max_ratio:
+                break
+            if not alive[i]:
+                continue
+            gi = geoms[i]
+            bi = gi.boundary
+            if bi is None:
+                continue
+            best = None
+            for jj in tree.query(gi, predicate="intersects"):
+                j = idx[int(jj)]
+                if j == i or not alive[j]:
+                    continue
+                bj = geoms[j].boundary
+                if bj is None:
+                    continue
+                shared = bi.intersection(bj)
+                L = shared.length
+                if L <= 1.0:
+                    continue
+                if major_tree is not None:
+                    try:
+                        pts = [shared.interpolate(f, normalized=True)
+                               for f in (0.15, 0.35, 0.5, 0.65, 0.85)]
+                        _, dist = major_tree.query_nearest(
+                            pts, return_distance=True)
+                        if float(np.mean(np.asarray(dist) <= 20.0)) >= 0.6:
+                            continue
+                    except Exception:  # noqa: BLE001
+                        pass
+                try:
+                    u = shapely.union_all([geoms[j], gi])
+                except Exception:  # noqa: BLE001
+                    continue
+                if u.geom_type != "Polygon" or not u.is_valid:
+                    continue
+                if _holes(u) > max(_holes(geoms[j]), _holes(gi)):
+                    continue
+                pp = 4 * math.pi * u.area / max(u.length ** 2, 1e-9)
+                if pp < 0.15 or _aspect(u) > 8.0:
+                    continue
+                if best is None or L > best[0]:
+                    best = (L, j, u)
+            if best is None:
+                continue
+            geoms[best[1]] = best[2]
+            alive[i] = False
+            merged += 1
+        if not merged:
+            break
+        print(f"[count-cap] {int(alive.sum())} / target {target}")
+    return _pack(z, geoms, metas, alive, utm)
+
+
+def generate_guangdong_aggregate(bbox, force=False, scope="province",
+                                 admin_name=None, level=None, center=None,
+                                 progress=None):
+    """City/province = union of reference-targeted county fine partitions.
+
+    Each county is processed and cached independently, which keeps the
+    per-process memory at one county and makes the final city/province count
+    the sum of its county targets.
+    """
+    tgt = reference_targets()
+    if not tgt or not tgt.get("cities"):
+        raise ValueError("reference targets unavailable")
+    try:
+        from .quality import dedupe_names, metrics, zone_scores, _bad
+    except ImportError:
+        from commercial_zoning.quality import (dedupe_names, metrics,
+                                               zone_scores, _bad)
+
+    b = _bbox(bbox, scope=scope)
+    key = _key(b, city_mode=True,
+               variant=f"agg-{scope}-{admin_name or ''}-{level or ''}")
+    d = CACHE / key
+    d.mkdir(parents=True, exist_ok=True)
+    zones_path = d / "xgb_zones.geojson"
+    meta_path = d / "meta.json"
+    if zones_path.exists() and not force:
+        z = gpd.read_file(zones_path)
+        _report(progress, 100, "缓存命中")
+        return {"key": key, "zones": len(z), "cached": True,
+                "geojson": str(zones_path),
+                "meta": json.loads(meta_path.read_text(encoding="utf-8"))
+                if meta_path.exists() else {}}
+    t0 = time.time()
+    units = []
+
+    def _city_unit(cm):
+        # One fine process per city, with the count equal to the sum of its
+        # county reference counts.  This avoids relying on imperfect county
+        # polygons (e.g. island-only level-6 relations) while keeping the
+        # city total exact.
+        return {"name": cm["name"], "count": int(cm["count"]),
+                "bbox": cm["bbox"], "center": cm["center"],
+                "level": cm.get("level", "5")}
+
+    if scope == "province":
+        for _ck, cm in tgt["cities"].items():
+            units.append(_city_unit(cm))
+    else:
+        ck = _strip_admin(admin_name)
+        cm = tgt["cities"].get(ck)
+        if cm is None:
+            return generate_admin_region(bbox, force=force, scope="city",
+                                         admin_name=admin_name, level=level,
+                                         center=center, progress=progress)
+        units.append(_city_unit(cm))
+    seen = set()
+    units = [u for u in units if not (u["name"] in seen
+                                      or seen.add(u["name"]))]
+    n = max(len(units), 1)
+    unit_dir = CACHE / "agg_units"
+    unit_dir.mkdir(parents=True, exist_ok=True)
+    frames = []
+    failed = []
+    for idx, u in enumerate(units):
+        safe = "".join(c for c in u["name"] if c not in r'\/:*?"<>|')
+        up = unit_dir / (f"{safe}-{u['count']}-"
+                          f"{os.environ.get('XGB_SERVICE_VERSION', '1.1.0')}.geojson")
+
+        def _prog(pct, stage, i=idx):
+            _report(progress, 5 + (i + pct / 100.0) / n * 85.0,
+                    f"{stage} ({i + 1}/{n})")
+
+        try:
+            if up.exists() and not force:
+                g = gpd.read_file(up)
+                _report(progress, 5 + (idx + 1) / n * 85.0,
+                        f"加载 {u['name']} ({idx + 1}/{n})")
+            else:
+                _report(progress, 5 + idx / n * 85.0,
+                        f"生成 {u['name']} ({idx + 1}/{n})")
+                res = generate_region(
+                    ",".join(str(x) for x in u["bbox"]), force=force,
+                    scope="county", admin_name=u["name"],
+                    level=u["level"], center=u["center"],
+                    progress=_prog, target_count=u["count"])
+                g = gpd.read_file(res["geojson"])
+                g.to_file(up, driver="GeoJSON")
+            frames.append(g)
+        except Exception as exc:  # noqa: BLE001
+            failed.append({"unit": u["name"], "error": repr(exc)})
+            print(f"[agg] {u['name']} failed: {exc}")
+    if not frames:
+        raise RuntimeError("aggregate generation produced no county results")
+    _report(progress, 92, "合并县区结果")
+    z = gpd.GeoDataFrame(pd.concat(frames, ignore_index=True),
+                         crs=frames[0].crs)
+    del frames
+    z["geometry"] = z.geometry.map(_poly)
+    z = z[z.geometry.notna() & ~z.geometry.is_empty].reset_index(drop=True)
+    unit_target = int(sum(u["count"] for u in units))
+    z = _cap_zone_count(z, unit_target)
+    z["geometry"] = z.geometry.map(_poly)
+    z = z[z.geometry.notna() & ~z.geometry.is_empty].reset_index(drop=True)
+    z["zone"] = np.arange(1, len(z) + 1)
+    try:
+        _zm = z.to_crs(z.estimate_utm_crs())
+        z["area_km2"] = _zm.area.to_numpy() / 1e6
+        z["pp"] = (4 * np.pi * _zm.area
+                   / np.maximum(_zm.length ** 2, 1e-9)).to_numpy()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        z = dedupe_names(z)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[agg] dedupe names skipped: {exc}")
+    land = z[z["kind"].eq("land")] if "kind" in z.columns else z
+    m = metrics(land)
+    qs = round(float(zone_scores(m).mean()), 1)
+    bad = int(_bad(m).sum())
+    _report(progress, 95, "写出分区结果")
+    z.to_file(zones_path, driver="GeoJSON")
+    try:
+        disp = z.to_crs(z.estimate_utm_crs())
+        tol = 20.0 if scope == "province" else 5.0
+        try:
+            disp["geometry"] = shapely.coverage_simplify(
+                np.asarray(disp.geometry.values, dtype=object), tolerance=tol)
+        except Exception:  # noqa: BLE001
+            disp["geometry"] = disp.geometry.simplify(tol,
+                                                       preserve_topology=True)
+        disp.to_crs(4326).to_file(d / "xgb_zones_display.geojson",
+                                  driver="GeoJSON")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[agg] display simplify skipped: {exc}")
+    target = unit_target
+    meta = {
+        "bbox": list(b),
+        "area_km2": round(float(z["area_km2"].sum())
+                          if "area_km2" in z.columns else 0.0, 1),
+        "zones": len(z), "target": target,
+        "quality_score": qs, "bad_zones": bad,
+        "engine": "county-aggregate",
+        "elapsed_s": round(time.time() - t0, 1),
+        "units": len(units), "failed_units": failed,
+    }
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2),
+                         encoding="utf-8")
+    print(f"[agg] {len(z)} zones (target {target}) / score {qs} / "
+          f"{meta['elapsed_s']} s / {len(units)} units")
+    _report(progress, 100, "完成")
+    return {"key": key, "zones": len(z), "cached": False,
+            "geojson": str(zones_path), "meta": meta}
+
+
 def generate_region(bbox, force=False, city_mode=False, scope=None,
-                    admin_name=None, level=None, center=None, progress=None):
+                    admin_name=None, level=None, center=None, progress=None,
+                    target_count=None):
     _report(progress, 2, "准备区域")
+    _ref = _target_meta(admin_name) if admin_name else None
+    if scope == "province" and _ref and _ref.get("kind") == "province":
+        return generate_guangdong_aggregate(
+            bbox, force=force, scope="province", admin_name=admin_name,
+            level=level, center=center, progress=progress)
+    if scope == "city" and _ref and _ref.get("kind") == "city":
+        return generate_guangdong_aggregate(
+            bbox, force=force, scope="city", admin_name=admin_name,
+            level=level, center=center, progress=progress)
     if scope in ("province", "city"):
         return generate_admin_region(bbox, force=force, scope=scope,
                                      admin_name=admin_name, level=level,
                                      center=center, progress=progress)
+    ref_target = int(target_count) if target_count else (
+        int(_ref["count"]) if _ref and _ref.get("count") else None)
     county_frame = None
     if scope == "county":
         # Small counties keep the supervised fine path (much higher IoU
@@ -1514,11 +1875,26 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
                 bc, scope, admin_name, level=level, center=center)
         except Exception as exc:  # noqa: BLE001
             print(f"[frame] county polygon unavailable: {exc}")
+        ref_area = float((_ref or {}).get("area_km2") or 0.0)
+        if county_frame is not None and ref_target and ref_area > 0:
+            raw_area = _geom_area_km2(county_frame)
+            # Only clip when the admin polygon is much larger than the
+            # reference land coverage (i.e. it includes a large sea area).
+            if raw_area > 1.5 * ref_area:
+                mask = _land_mask()
+                if mask is not None:
+                    try:
+                        inter = _poly(county_frame.intersection(mask))
+                        if inter is not None and not inter.is_empty:
+                            county_frame = inter
+                            print("[land] clipped to land coverage")
+                    except Exception as exc:  # noqa: BLE001
+                        print(f"[land] clip skipped: {exc}")
         carea = (_geom_area_km2(county_frame) if county_frame is not None
                  else _area_km2(bc))
         print(f"[route] county {admin_name or ''} polygon {carea:.0f} km2")
         _report(progress, 5, "解析行政区边界")
-        if carea > MAX_AREA_KM2:
+        if carea > MAX_AREA_KM2 and not ref_target:
             return generate_admin_region(bbox, force=force, scope=scope,
                                          admin_name=admin_name, level=level,
                                          center=center, progress=progress)
@@ -1534,6 +1910,10 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
         # county polygon (Nanshan: bbox 1,450 km2, polygon 619 km2).
         work_area = _geom_area_km2(county_frame) or area
     limit = MAX_AREA_CITY_KM2 if city_mode else MAX_AREA_KM2
+    if ref_target:
+        # Reference-targeted county units may be large (e.g. 英德 ~5,600 km2);
+        # keep them on the fine path so the target count is honoured.
+        limit = max(limit, 20000.0)
     if work_area > limit:
         raise ValueError(
             f"region too large ({work_area:.0f} km2); max {limit:.0f}")
@@ -1576,7 +1956,9 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
         build_lines(b, lines_path)
     _report(progress, 28, "准备切分")
     model, feats = _model()
-    if city_mode:
+    if ref_target:
+        target = max(24, min(4000, int(ref_target)))
+    elif city_mode:
         target = max(60, min(3000, int(round(area / 6.0))))
     elif scope == "county" and work_area > 1500.0:
         # Very large counties (Conghua ~2,000 km2) at 1,400 zones spend
@@ -1587,6 +1969,18 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
         fine_km2 = float(os.environ.get("XGB_FINE_TARGET_KM2", "1.0"))
         target = max(24 if fine_km2 < 1.0 else 40,
                      min(1400, int(round(work_area / max(fine_km2, 0.05)))))
+    _min_block = None
+    if ref_target:
+        # Keep the initial candidate count roughly 1.5-10x the final count:
+        # merge sub-faces smaller than about one sixth of the reference mean
+        # area before the XGB pair stage.
+        avg_m2 = (work_area / max(target, 1)) * 1e6
+        _min_block = int(max(20000, min(2000000, avg_m2 / 8.0)))
+    _cut = os.environ.get("XGB_CUT")
+    if not _cut:
+        _cut = ("all_local" if ref_target
+                else "major_minor" if city_mode
+                else "all_local" if area <= 20 else "long_local")
     env = os.environ.copy()
     env.update({
         "XGB_PBF": pbf,
@@ -1598,11 +1992,10 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
         # Quality-stage Voronoi is another source of non-OSM diagonal cuts;
         # default it off for the fine path as well.
         "XGB_QUALITY_VORONOI": os.environ.get("XGB_QUALITY_VORONOI", "0"),
-        "XGB_CUT": os.environ.get(
-            "XGB_CUT",
-            "major_minor" if city_mode else ("all_local" if area <= 20 else "long_local")),
+        "XGB_CUT": _cut,
         "XGB_TARGET": str(target),
-        "XGB_LOCAL_TARGET": ("0" if city_mode else
+        "XGB_REF_TARGET": str(ref_target or ""),
+        "XGB_LOCAL_TARGET": ("0" if (city_mode or ref_target) else
                              os.environ.get("XGB_LOCAL_TARGET", "1")),
         "XGB_MIN_P": os.environ.get("XGB_MIN_P", "0.15" if city_mode else "0.25"),
         # Default scheme: partition on raw OSM road lines (no dual collapse /
@@ -1613,7 +2006,8 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
             "XGB_SLIVER_W",
             "20" if os.environ.get("XGB_RAW_LINES", "1") == "1"
             else ("60" if city_mode else "45")),
-        "XGB_MIN_BLOCK_M2": os.environ.get("XGB_MIN_BLOCK_M2", "1000"),
+        "XGB_MIN_BLOCK_M2": (str(_min_block) if _min_block else
+                             os.environ.get("XGB_MIN_BLOCK_M2", "1000")),
         "XGB_FINAL_TARGET": "9999",
         "XGB_SMOOTH": os.environ.get("XGB_SMOOTH", "0"),
         "XGB_SMOOTH_TOL": os.environ.get("XGB_SMOOTH_TOL", "10" if city_mode else "16"),
@@ -1877,7 +2271,9 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
                 gs = round(float(zone_scores(gm).mean()), 1)
                 gb = int(_bad(gm).sum())
                 print(f"[grid] cells {len(gz)} score {gs} bad {gb} vs road {qs}/{bad}")
-                if gb < bad or (gb == bad and gs > qs + 2):
+                # A regular grid ignores roads.  Only fall back to it when
+                # the road engine produced almost nothing.
+                if len(z) < 10 and (gb < bad or (gb == bad and gs > qs + 2)):
                     # Carry the road layer's attribute card over by spatial
                     # join instead of zeroing every statistic.
                     src = z.to_crs(gz.crs)
@@ -2065,7 +2461,8 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
     meta = {"bbox": list(b), "area_km2": round(_zarea, 1),
             "bbox_area_km2": round(area, 1), "zones": len(z),
             "elapsed_s": round(elapsed, 1), "model": model.name,
-            "target": target, "quality_score": qs, "bad_zones": bad,
+            "target": target, "ref_target": ref_target,
+            "quality_score": qs, "bad_zones": bad,
             "engine": engine}
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2),
                          encoding="utf-8")
@@ -2075,7 +2472,10 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
 
 
 def load_geojson(key):
-    p = CACHE / key / "xgb_zones.geojson"
+    d = CACHE / key
+    p = d / "xgb_zones_display.geojson"
+    if not p.exists():
+        p = d / "xgb_zones.geojson"
     if not p.exists():
         raise FileNotFoundError(key)
     import json as _json

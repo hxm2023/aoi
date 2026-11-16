@@ -1,19 +1,204 @@
 """Minimal commercial API: region catalog, zoning jobs, static web app."""
 from __future__ import annotations
+import math
+import os
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 
 from .regions import REGIONS
-from .region_service import (generate_region, load_geojson, list_cached,
-                             start_job, job_status, clear_generated_cache)
+from .region_service import (CACHE, generate_region, load_geojson,
+                             list_cached, start_job, job_status,
+                             clear_generated_cache)
 
 ROOT = Path(__file__).resolve().parents[1]
 app = FastAPI(title="OSM Commercial Zoning", version="1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+_REFERENCE_DIR = ROOT / "data" / "reference"
+_REF_CACHE = {"stamp": None, "gdf": None}
+_BOUND_CACHE = {}
+_BASEMAP_CACHE = {}
+
+
+def _reference_gdf():
+    import geopandas as gpd
+    import pandas as pd
+    from shapely import wkt
+    files = sorted(_REFERENCE_DIR.glob("*.csv"))
+    if not files:
+        raise HTTPException(404, "reference CSV is not configured")
+    p = files[0]
+    stamp = (str(p), p.stat().st_mtime_ns)
+    if _REF_CACHE["stamp"] != stamp:
+        df = None
+        for enc in ("gb18030", "gbk", "utf-8-sig", "utf-8"):
+            try:
+                df = pd.read_csv(p, encoding=enc)
+                break
+            except UnicodeDecodeError:
+                continue
+        if df is None:
+            raise HTTPException(500, "could not decode reference CSV")
+        gcol = next(c for c in ("WKT", "wkt", "geometry") if c in df.columns)
+        ref = gpd.GeoDataFrame(
+            df.drop(columns=gcol),
+            geometry=[wkt.loads(s) for s in df[gcol]], crs=4326)
+        _REF_CACHE.update(stamp=stamp, gdf=ref)
+    return _REF_CACHE["gdf"]
+
+
+@app.get("/zoning/reference")
+def zoning_reference(bbox: str | None = None):
+    """Reference micro-grid boundaries only (no names/codes/properties)."""
+    import geopandas as gpd
+    from shapely.geometry import box, mapping
+    key = bbox or "all"
+    if key in _BOUND_CACHE:
+        return _BOUND_CACHE[key]
+    ref = _reference_gdf()
+    if bbox:
+        try:
+            b = [float(x) for x in bbox.split(",")]
+        except Exception:
+            raise HTTPException(400, "bbox must be lon0,lat0,lon1,lat1")
+        ref = ref[ref.intersects(box(*b))]
+    if not len(ref):
+        out = {"type": "FeatureCollection", "features": []}
+    else:
+        bnd = gpd.GeoSeries(ref.geometry.boundary, crs=4326).simplify(
+            0.00015, preserve_topology=False)
+        feats = []
+        for g in bnd:
+            if g is None or g.is_empty:
+                continue
+            feats.append({"type": "Feature", "properties": {},
+                          "geometry": mapping(g)})
+        out = {"type": "FeatureCollection", "features": feats}
+    if len(_BOUND_CACHE) > 8:
+        _BOUND_CACHE.clear()
+    _BOUND_CACHE[key] = out
+    return out
+
+
+@app.get("/zoning/basemap")
+def zoning_basemap(bbox: str, key: str | None = None):
+    """Local OSM roads/water for the offline basemap; no external tiles."""
+    import pyogrio
+    from shapely.geometry import mapping
+    cache_key = f"{key or ''}|{bbox}"
+    if cache_key in _BASEMAP_CACHE:
+        return _BASEMAP_CACHE[cache_key]
+    if key:
+        p = CACHE / key / "lines.geojson"
+        if p.exists():
+            try:
+                import geopandas as gpd
+                g = gpd.read_file(p)
+                if len(g):
+                    g = g.to_crs(3857)
+                    g["geometry"] = g.geometry.simplify(
+                        10.0, preserve_topology=False)
+                    g = g[~g.geometry.is_empty].to_crs(4326)
+                    feats = []
+                    for geom, kl in zip(g.geometry,
+                                        g.get("klass", "soft").astype(str)):
+                        if geom is None or geom.is_empty:
+                            continue
+                        if kl == "water":
+                            cls = "water"
+                        elif kl == "major":
+                            cls = "major"
+                        else:
+                            cls = "minor"
+                        feats.append({"type": "Feature",
+                                      "properties": {"klass": cls},
+                                      "geometry": mapping(geom)})
+                    out = {"type": "FeatureCollection", "features": feats}
+                    if len(_BASEMAP_CACHE) > 8:
+                        _BASEMAP_CACHE.clear()
+                    _BASEMAP_CACHE[cache_key] = out
+                    return out
+            except Exception as exc:  # noqa: BLE001
+                print(f"[basemap] cached lines skipped: {exc}")
+    try:
+        b = tuple(float(x) for x in bbox.split(","))
+    except Exception:
+        raise HTTPException(400, "bbox must be lon0,lat0,lon1,lat1")
+    try:
+        from .providers import resolve as resolve_pbf, _osm_conf
+    except ImportError:
+        from commercial_zoning.providers import resolve as resolve_pbf, _osm_conf
+    try:
+        pbf = resolve_pbf(b)
+    except Exception as exc:  # noqa: BLE001
+        return {"type": "FeatureCollection", "features": [],
+                "error": str(exc)}
+    cfg = str(_osm_conf())
+    os.environ["OSM_CONFIG_FILE"] = cfg
+    pyogrio.set_gdal_config_options({"OSM_CONFIG_FILE": cfg})
+    dx = ((b[2] - b[0]) * 111.32
+          * abs(math.cos(math.radians((b[1] + b[3]) / 2))))
+    dy = (b[3] - b[1]) * 110.57
+    area_km2 = dx * dy
+    if area_km2 > 20000:
+        kinds = "('motorway','trunk','primary','secondary')"
+        tol = 0.0015
+    elif area_km2 > 1500:
+        kinds = ("('motorway','trunk','primary','secondary','tertiary')")
+        tol = 0.0003
+    else:
+        kinds = ("('motorway','trunk','primary','secondary','tertiary',"
+                 "'residential','unclassified','living_street')")
+        tol = 0.00008
+    feats = []
+    try:
+        roads = pyogrio.read_dataframe(
+            pbf, layer="lines", bbox=b, where=f"highway IN {kinds}",
+            columns=["highway", "geometry"], on_invalid="warn")
+        if len(roads):
+            roads = roads.to_crs(3857)
+            roads["geometry"] = roads.geometry.simplify(
+                tol * 111320, preserve_topology=False)
+            roads = roads[~roads.geometry.is_empty].to_crs(4326)
+            for g, hw in zip(roads.geometry, roads["highway"].astype(str)):
+                if g is None or g.is_empty:
+                    continue
+                major = hw in ("motorway", "trunk", "primary", "secondary")
+                feats.append({
+                    "type": "Feature",
+                    "properties": {"klass": "major" if major else "minor"},
+                    "geometry": mapping(g)})
+    except Exception as exc:  # noqa: BLE001
+        print(f"[basemap] roads skipped: {exc}")
+    try:
+        water = pyogrio.read_dataframe(
+            pbf, layer="lines", bbox=b,
+            where="waterway IN ('river','canal','stream')",
+            columns=["waterway", "geometry"], on_invalid="warn")
+        if len(water):
+            water = water.to_crs(3857)
+            water["geometry"] = water.geometry.simplify(
+                tol * 111320, preserve_topology=False)
+            water = water[~water.geometry.is_empty].to_crs(4326)
+            for g in water.geometry:
+                if g is None or g.is_empty:
+                    continue
+                feats.append({"type": "Feature",
+                              "properties": {"klass": "water"},
+                              "geometry": mapping(g)})
+    except Exception as exc:  # noqa: BLE001
+        print(f"[basemap] water skipped: {exc}")
+    out = {"type": "FeatureCollection", "features": feats}
+    if len(_BASEMAP_CACHE) > 8:
+        _BASEMAP_CACHE.clear()
+    _BASEMAP_CACHE[cache_key] = out
+    return out
 
 
 @app.get("/health")

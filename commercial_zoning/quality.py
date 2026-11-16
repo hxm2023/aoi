@@ -511,7 +511,9 @@ def post_cleanup(zones, severe_pp=0.45, huge_area=1.0, target=0.8,
         merged_small += 1
     print(f"[post] merged {merged_small} tiny fragments")
     # A tiny merge can push a neighbour above the size cap; split once more
-    # AFTER the merge so no >huge_area zone survives.
+    # AFTER the merge so no >huge_area zone survives.  The first split above
+    # already followed real linework when available; this fallback only
+    # touches the few faces that remain oversized with no usable inner line.
     z = _split_huge_voronoi(z, max_area=huge_area, target=target)
 
     # 4. clean degenerate parts/holes

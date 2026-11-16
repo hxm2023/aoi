@@ -6,6 +6,8 @@ venv/
 out/
 data/china/*.pbf
 data/china/*.osm.pbf
+data/reference/
+aoi_zoning_delivery/data/reference/
 commercial_zoning/cache/
 aoi_zoning_delivery/cache/
 aoi_zoning_delivery/app/cache/

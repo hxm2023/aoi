@@ -1752,7 +1752,11 @@ def _merge_from_pairs(blocks, pair, target=None):
         adj[z].clear()
         alive.remove(z)
     live = len({find(i) for i in range(n)})
-    print(f"[merge] land blocks {n} -> {live} (target {target})")
+    ratio = n / max(target, 1)
+    print(f"[merge] land blocks {n} -> {live} "
+          f"(target {target}, candidates {ratio:.1f}x)")
+    if ratio < 1.5:
+        print(f"[merge] WARNING: candidate/target ratio {ratio:.1f} < 1.5")
     blocks = blocks.copy()
     blocks["zone"] = [find(i) for i in range(n)]
     land = blocks[blocks["kind"].eq("land")].dissolve(by="zone", as_index=False)
