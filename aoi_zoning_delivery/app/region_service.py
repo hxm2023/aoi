@@ -1676,8 +1676,16 @@ def _cap_zone_count(z, target, lines=None, max_ratio=1.05, passes=12):
                 pp = 4 * math.pi * u.area / max(u.length ** 2, 1e-9)
                 if pp < 0.15 or _aspect(u) > 8.0:
                     continue
-                if best is None or L > best[0]:
-                    best = (L, j, u)
+                # Prefer merging zones with similar urban intensity and
+                # dominant land use, which keeps reference-like groups.
+                ui = float(metas[i].get("urban_score") or 0.5)
+                uj = float(metas[j].get("urban_score") or 0.5)
+                same_lu = (metas[i].get("dominant_lu")
+                           == metas[j].get("dominant_lu"))
+                score = L * (1.0 + 0.6 * (1.0 - abs(ui - uj))
+                             + (0.2 if same_lu else 0.0))
+                if best is None or score > best[0]:
+                    best = (score, j, u, L)
             if best is None:
                 continue
             geoms[best[1]] = best[2]
@@ -1775,7 +1783,10 @@ def generate_guangdong_aggregate(bbox, force=False, scope="province",
                     level=u["level"], center=u["center"],
                     progress=_prog, target_count=u["count"])
                 g = gpd.read_file(res["geojson"])
-                g.to_file(up, driver="GeoJSON")
+            # Per-city count control: the reference count is the sum of the
+            # city's county counts, so cap each city unit before merging.
+            g = _cap_zone_count(g, u["count"], max_ratio=1.0)
+            g.to_file(up, driver="GeoJSON")
             frames.append(g)
         except Exception as exc:  # noqa: BLE001
             failed.append({"unit": u["name"], "error": repr(exc)})
@@ -1789,7 +1800,7 @@ def generate_guangdong_aggregate(bbox, force=False, scope="province",
     z["geometry"] = z.geometry.map(_poly)
     z = z[z.geometry.notna() & ~z.geometry.is_empty].reset_index(drop=True)
     unit_target = int(sum(u["count"] for u in units))
-    z = _cap_zone_count(z, unit_target)
+    z = _cap_zone_count(z, unit_target, max_ratio=1.02)
     z["geometry"] = z.geometry.map(_poly)
     z = z[z.geometry.notna() & ~z.geometry.is_empty].reset_index(drop=True)
     z["zone"] = np.arange(1, len(z) + 1)
@@ -2053,9 +2064,12 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
     threading.Thread(target=_tick, daemon=True).start()
     try:
         with open(log_path, "w", encoding="utf-8") as f:
+            # Reference-targeted city units can be a whole prefecture and
+            # legitimately take well over the old 30-minute cap.
+            _timeout = 21600 if ref_target else 1800
             subprocess.run([sys.executable, "-u", str(PIPELINE)], env=env,
                            cwd=str(ROOT), stdout=f, stderr=subprocess.STDOUT,
-                           timeout=1800, check=True)
+                           timeout=_timeout, check=True)
     finally:
         stop_tick.set()
     _report(progress, 86, "后处理清理")
