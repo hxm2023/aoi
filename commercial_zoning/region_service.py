@@ -66,6 +66,160 @@ def reference_targets():
     return _REF_TARGETS
 
 
+_AREA_BUDGET = None
+
+
+def _budget_path():
+    for p in (_HERE / "area_budget.json",
+              MODELS / "area_budget.json",
+              ROOT / "commercial_zoning" / "area_budget.json"):
+        if p.exists():
+            return p
+    return None
+
+
+def area_budget():
+    """Density-class area budget derived from the reference scheme.
+
+    Only aggregate statistics: per-class mean areas and the road-density
+    thresholds that separate the classes.  Regions without a reference
+    scheme use this table instead of a baked-in zone count.
+    """
+    global _AREA_BUDGET
+    if _AREA_BUDGET is not None:
+        return _AREA_BUDGET if _AREA_BUDGET is not False else None
+    p = _budget_path()
+    if p is None:
+        _AREA_BUDGET = False
+        return None
+    try:
+        _AREA_BUDGET = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        _AREA_BUDGET = False
+    return _AREA_BUDGET if _AREA_BUDGET else None
+
+
+def _budget_class(road_density, budget):
+    th = budget.get("thresholds", {})
+    if road_density >= float(th.get("core_min", 7.0)):
+        return "core"
+    if road_density >= float(th.get("urban_min", 2.5)):
+        return "urban"
+    if road_density >= float(th.get("rural_min", 0.15)):
+        return "rural"
+    return "remote"
+
+
+def _budget_mean(cls, budget, remote_density=None):
+    classes = budget.get("classes", {})
+    if cls == "remote":
+        if remote_density is None:
+            return float(classes.get("remote", {}).get("mean", 80.0))
+        rural = float(classes.get("rural", {}).get("mean", 21.0))
+        rp50 = float(budget.get("density_stats", {}).get("rural", {})
+                     .get("p50", 1.3))
+        # Very sparse cells grow the average zone area as 1/sqrt(density),
+        # clamped to a practical band so a desert does not become one zone.
+        return min(100.0, max(40.0, rural * math.sqrt(
+            rp50 / max(remote_density, 0.02))))
+    return float(classes.get(cls, {}).get("mean", 2.5))
+
+
+def _density_target(b, lines_path, frame=None, scope=None, city_mode=False):
+    """Area budget from OSM road density, for regions without a reference.
+
+    The bbox is tiled into coarse cells; each cell is classified by highway
+    km per km2 using the thresholds calibrated on the reference microgrid.
+    The target is the sum of each class's area divided by its mean zone
+    area.  Deserts/plateaus fall into the remote class and get large zones.
+    """
+    budget = area_budget()
+    if budget is None or lines_path is None:
+        return None
+    import geopandas as gpd
+    g = gpd.read_file(lines_path)
+    roads = (g[g["klass"].isin(["major", "minor", "soft"])]
+             if len(g) else g)
+    if not len(roads) and len(g):
+        roads = g[~g["klass"].isin(["water", "rail"])]
+
+    def _clamp(v):
+        if city_mode:
+            lo, hi = 60, 4000
+        elif scope == "county":
+            lo, hi = 40, 1400
+        else:
+            lo, hi = 24, 1400
+        return max(lo, min(hi, int(round(v))))
+
+    if not len(roads):
+        # No road evidence at all: treat the whole frame as remote, which is
+        # the correct budget for desert / uninhabited plateau.
+        land = (_geom_area_km2(frame) if frame is not None
+                else _area_km2(b))
+        mean = _budget_mean("remote", budget, remote_density=0.0)
+        target = _clamp(land / max(mean, 0.05))
+        print(f"[budget] no road evidence -> remote {mean:.0f} km2/zone, "
+              f"target {target}", flush=True)
+        return target
+    if frame is not None:
+        fb = frame.bounds
+        b = (max(b[0], fb[0]), max(b[1], fb[1]),
+             min(b[2], fb[2]), min(b[3], fb[3]))
+        if b[0] >= b[2] or b[1] >= b[3]:
+            return None
+    lon0, lat0, lon1, lat1 = b
+    span = max((lon1 - lon0) * (lat1 - lat0), 1e-9)
+    step = max(0.015, math.sqrt(span / 8000.0))
+    xs = np.arange(lon0, lon1 + step * 0.5, step)
+    ys = np.arange(lat0, lat1 + step * 0.5, step)
+    from shapely.geometry import box as _box
+    cells = [_box(x, y, min(x + step, lon1), min(y + step, lat1))
+             for x in xs for y in ys]
+    cells = gpd.GeoSeries(cells, crs=4326)
+    if frame is not None:
+        clipped = shapely.intersection(cells.values, frame)
+        cells = gpd.GeoSeries(clipped, crs=4326)
+    cells = cells[~cells.is_empty & cells.notna()]
+    if not len(cells):
+        return None
+    try:
+        utm = cells.estimate_utm_crs()
+    except Exception:  # noqa: BLE001
+        utm = "EPSG:3857"
+    cm = cells.to_crs(utm)
+    areas = np.asarray(cm.area, dtype=float) / 1e6
+    keep = areas > 1e-4
+    cm = cm[keep].reset_index(drop=True)
+    areas = areas[keep]
+    roads_m = roads.to_crs(utm)
+    cell_geoms = cm.geometry.values
+    tree = shapely.STRtree(cell_geoms)
+    lens = np.zeros(len(cm))
+    for line in roads_m.geometry.values:
+        for j in tree.query(line, predicate="intersects"):
+            try:
+                lens[int(j)] += line.intersection(cell_geoms[int(j)]).length
+            except Exception:  # noqa: BLE001
+                pass
+    dens = (lens / 1000.0) / np.maximum(areas, 1e-9)
+    cls = [ _budget_class(float(d), budget) for d in dens ]
+    class_area = {}
+    for c, a in zip(cls, areas):
+        class_area[c] = class_area.get(c, 0.0) + float(a)
+    remote = [float(d) for c, d in zip(cls, dens) if c == "remote"]
+    remote_med = float(np.median(remote)) if remote else None
+    total = 0.0
+    for c, a in class_area.items():
+        mean = _budget_mean(c, budget, remote_density=remote_med)
+        total += a / max(mean, 0.05)
+    target = _clamp(total)
+    print("[budget] road-density target {} | ".format(target)
+          + " ".join(f"{c}:{class_area[c] / max(_budget_mean(c, budget, remote_med), 0.05):.0f}区"
+                     for c in sorted(class_area)), flush=True)
+    return target
+
+
 def _strip_admin(name):
     s = (name or "").strip()
     for suf in ("特别行政区", "自治区", "自治州", "自治县", "地区",
@@ -228,10 +382,68 @@ def _bbox(s, city=False, scope=None):
     return (x0, y0, x1, y1)
 
 
+def _limit_bbox_to_local(b):
+    """Clip a bbox that only slightly overhangs the local PBF coverage.
+
+    Reference/catalog bboxes follow administrative geometry and can stick a
+    few hundred metres into the sea beyond the province extent (Shantou's
+    east edge is 0.13 deg past the extract).  Providers refuse such a bbox
+    because <90% of it is covered, although the land part is complete.
+    """
+    try:
+        from .providers import province_catalog
+    except ImportError:
+        from commercial_zoning.providers import province_catalog
+    best = None
+    for p in province_catalog():
+        if not p.get("available"):
+            continue
+        q = p.get("bbox")
+        if not q:
+            continue
+        ix = (max(b[0], q[0]), max(b[1], q[1]),
+              min(b[2], q[2]), min(b[3], q[3]))
+        if ix[0] >= ix[2] or ix[1] >= ix[3]:
+            continue
+        a = (ix[2] - ix[0]) * (ix[3] - ix[1])
+        if best is None or a > best[0]:
+            best = (a, ix)
+    if best is None:
+        return b
+    orig = max((b[2] - b[0]) * (b[3] - b[1]), 1e-12)
+    if best[0] / orig < 0.8:
+        return b
+    ix = best[1]
+    if ix != tuple(b):
+        print(f"[bbox] clipped to local data extent: {ix}")
+    return ix
+
+
 def _area_km2(b):
     x0, y0, x1, y1 = b
     lat = (y0 + y1) / 2
     return (x1 - x0) * 111.32 * math.cos(math.radians(lat)) * (y1 - y0) * 110.57
+
+
+def _auto_target(work_area_km2, scope=None, city_mode=False):
+    """Area-budget zone target for regions without a reference scheme.
+
+    Only Guangdong ships aggregate reference statistics.  Other provinces
+    have no standard microgrid, so their target is derived from area alone:
+    about one zone per km2 for a fine county unit, one per 4 km2 for a very
+    large county, and one per 6 km2 for a whole-prefecture fine run.  No
+    reference zone count is baked into the code.
+    """
+    area = max(float(work_area_km2 or 0.0), 0.05)
+    fine = os.environ.get("XGB_FINE_TARGET_KM2")
+    if city_mode:
+        avg, lo, hi = 6.0, 60, 3000
+    elif scope == "county" and area > 1500.0:
+        avg, lo, hi = 4.0, 120, 500
+    else:
+        avg = float(fine) if fine else 1.0
+        lo, hi = (24 if avg < 1.0 else 40), 1400
+    return max(lo, min(hi, int(round(area / max(avg, 0.05)))))
 
 
 def _geom_area_km2(g):
@@ -617,8 +829,13 @@ def _attach_micro(z, min_m2=1000.0):
     return _pack(z, geoms, metas, alive, utm)
 
 
-def _merge_bad_zones(z, max_km2=2.0, passes=200):
+def _merge_bad_zones(z, max_km2=2.0, passes=200, min_count=0):
     """Merge post-clip slivers/low-pp zones into a neighbour.
+
+    ``min_count`` is a hard floor: stop absorbing when the tessellation has
+    reached the reference zone count for the unit.  Without it, rural
+    prefectures (wide, irregular road faces) lost 60-70% of their zones to
+    this pass and ended far below the reference count.
 
     Clipping a road-face partition to a county edge produces very small or
     very thin edge zones that were never part of the original partition.
@@ -661,6 +878,8 @@ def _merge_bad_zones(z, max_km2=2.0, passes=200):
     min_pp = np.where(urb >= 0.60, 0.30,
                       np.where(urb >= 0.35, 0.30, 0.28))
     for _ in range(passes):
+        if min_count and int(alive.sum()) <= min_count:
+            break
         pp = np.array([4 * math.pi * g.area / max(g.length ** 2, 1e-9)
                        for g in geoms])
         asp = np.array([_aspect(g) for g in geoms])
@@ -676,6 +895,8 @@ def _merge_bad_zones(z, max_km2=2.0, passes=200):
         tree = shapely.STRtree(geoms)
         merged = 0
         for i in bad[np.argsort(areas[bad])]:
+            if min_count and int(alive.sum()) <= min_count:
+                break
             if not alive[i]:
                 continue
             gi = geoms[i]
@@ -1220,7 +1441,7 @@ def _explode_multipolygons(z, min_part_km2=0.15):
     return gpd.GeoDataFrame(rows, geometry="geometry", crs=z.crs)
 
 
-def _clip_to_admin(z, frame):
+def _clip_to_admin(z, frame, min_count=0):
     """Clip fine-path zones to the county polygon and keep full coverage.
 
     OSM/road faces contain a few invalid rings, so every step is per-feature
@@ -1306,7 +1527,7 @@ def _clip_to_admin(z, frame):
             out = enforce_single_component_q(out)
         except Exception as exc:  # noqa: BLE001
             print(f"[frame] final component cleanup skipped: {exc}")
-        out = _merge_bad_zones(out)
+        out = _merge_bad_zones(out, min_count=min_count)
         out = _attach_micro(out, min_m2=1000.0)
         out["geometry"] = out.geometry.map(_fill_admin_holes)
     except Exception as exc:  # noqa: BLE001
@@ -1524,8 +1745,8 @@ def generate_admin_region(bbox, force=False, scope="city", admin_name=None,
         # up to 3 km2 turned into a multi-minute loop on 900+ polygons.
         max_area, min_part, min_km2 = 15.0, 0.5, 0.3
     _report(progress, 64, "沿 OSM 线切分")
-    z8 = split_with_roads(z8, lines, max_area=max_area, min_part=min_part,
-                                  strict=False)
+    z8 = _split_admin_by_density(z8, lines, min_part=min_part,
+                                 default_max_area=max_area)
     _report(progress, 76, "合并小块/低紧凑度区")
     z8["geometry"] = z8.geometry.map(_poly)
     z8 = z8[z8.geometry.notna() & ~z8.geometry.is_empty].reset_index(drop=True)
@@ -1544,6 +1765,25 @@ def generate_admin_region(bbox, force=False, scope="city", admin_name=None,
     z8 = z8[z8.geometry.notna() & ~z8.geometry.is_empty].reset_index(drop=True)
     z8["geometry"] = z8.geometry.map(_fill_admin_holes)
     z8 = z8[z8.geometry.notna() & ~z8.geometry.is_empty].reset_index(drop=True)
+    # Density budget: the admin engine must produce the same kind of zone
+    # count as the fine path.  Attach road density, derive the area-budget
+    # target from the linework, and split/merge the townships to it.
+    _dtarget = None
+    try:
+        z8 = _attach_road_density(z8, lines)
+        _zarea = float(z8.to_crs(z8.estimate_utm_crs()).area.sum()) / 1e6
+        _dtarget = _density_target(b, lines_path, frame=frame, scope=scope,
+                                   city_mode=(scope == "city"))
+        if _dtarget:
+            z8 = _enforce_zone_count(z8, _dtarget, lines=lines,
+                                     work_area_km2=_zarea)
+            z8["geometry"] = z8.geometry.map(_poly)
+            z8 = z8[z8.geometry.notna() & ~z8.geometry.is_empty]
+            z8 = z8.reset_index(drop=True)
+            print(f"[admin] density target {_dtarget} -> {len(z8)} zones",
+                  flush=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[admin] density count skipped: {exc}")
     _report(progress, 88, "质量清理")
     z8["zone"] = np.arange(1, len(z8) + 1)
     z8["kind"] = "land"
@@ -1551,7 +1791,8 @@ def generate_admin_region(bbox, force=False, scope="city", admin_name=None,
     z8["name_src"] = "admin"
     z8["poi_density"] = 0.0
     z8["building_density"] = 0.0
-    z8["road_density"] = 0.0
+    if "road_density" not in z8.columns:
+        z8["road_density"] = 0.0
     z8["urban_score"] = 0.0
     z8["block_count"] = 0
     zm = z8.to_crs(z8.estimate_utm_crs())
@@ -1577,7 +1818,8 @@ def generate_admin_region(bbox, force=False, scope="city", admin_name=None,
             "area_km2": round(float(z8["area_km2"].sum()), 1),
             "bbox_area_km2": round(_area_km2(b), 1),
             "zones": len(z8), "elapsed_s": round(time.time() - t0, 1),
-            "model": "admin", "target": len(z8), "quality_score": qs,
+            "model": "admin", "target": int(_dtarget or len(z8)),
+            "quality_score": qs,
             "bad_zones": int(sum(m.holes > 0)), "engine": "admin"}
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2),
                          encoding="utf-8")
@@ -1588,13 +1830,15 @@ def generate_admin_region(bbox, force=False, scope="city", admin_name=None,
             "geojson": str(zones_path), "meta": meta}
 
 
-def _cap_zone_count(z, target, lines=None, max_ratio=1.05, passes=12):
+def _cap_zone_count(z, target, lines=None, max_ratio=1.05, passes=12,
+                    only_mask=None):
     """Merge the smallest zones until the reference count is approached.
 
     Merges only across shared borders (never cuts new diagonals) and skips
     borders that sit on a major road, so the remaining boundaries stay on
-    OSM linework.  Used for reference-targeted city units that overshoot the
-    target count.
+    OSM linework.  ``only_mask`` restricts the merge set to one density
+    class, which lets the caller enforce per-class quotas without touching
+    the other classes.
     """
     if not target or len(z) <= target * max_ratio:
         return z
@@ -1627,16 +1871,30 @@ def _cap_zone_count(z, target, lines=None, max_ratio=1.05, passes=12):
         return sum(len(p.interiors) for p in shapely.get_parts(g)
                    if p.geom_type == "Polygon")
 
+    # Merge the sparse (rural) tessellation first and keep the dense urban
+    # zones intact.  This preserves the reference's allocation: many small
+    # zones in built-up areas, few large zones in the countryside.
+    rd = np.array([float(metas[i].get("road_density") or 0.0)
+                   for i in range(len(geoms))])
+    budget = area_budget()
+
+    def _max_union(i):
+        if budget is None:
+            return 12.0
+        cls = _budget_class(float(rd[i]), budget)
+        return max(4.0, _budget_mean(cls, budget) * 3.0)
+
     for _p in range(passes):
-        n_alive = int(alive.sum())
+        idx = [i for i in range(len(geoms))
+               if alive[i] and (only_mask is None or bool(only_mask[i]))]
+        n_alive = len(idx)
         if n_alive <= target * max_ratio:
             break
-        idx = [i for i in range(len(geoms)) if alive[i]]
         tree = shapely.STRtree([geoms[i] for i in idx])
-        order = sorted(idx, key=lambda i: geoms[i].area)
+        order = sorted(idx, key=lambda i: (rd[i], geoms[i].area))
         merged = 0
         for i in order:
-            if alive.sum() <= target * max_ratio:
+            if sum(1 for _i in idx if alive[_i]) <= target * max_ratio:
                 break
             if not alive[i]:
                 continue
@@ -1648,6 +1906,8 @@ def _cap_zone_count(z, target, lines=None, max_ratio=1.05, passes=12):
             for jj in tree.query(gi, predicate="intersects"):
                 j = idx[int(jj)]
                 if j == i or not alive[j]:
+                    continue
+                if only_mask is not None and not only_mask[j]:
                     continue
                 bj = geoms[j].boundary
                 if bj is None:
@@ -1674,17 +1934,23 @@ def _cap_zone_count(z, target, lines=None, max_ratio=1.05, passes=12):
                     continue
                 if _holes(u) > max(_holes(geoms[j]), _holes(gi)):
                     continue
+                if u.area / 1e6 > _max_union(i):
+                    continue
                 pp = 4 * math.pi * u.area / max(u.length ** 2, 1e-9)
                 if pp < 0.15 or _aspect(u) > 8.0:
                     continue
-                # Prefer merging zones with similar urban intensity and
-                # dominant land use, which keeps reference-like groups.
+                # Prefer merging zones with similar urban intensity, land use
+                # and density class, which keeps reference-like groups.
                 ui = float(metas[i].get("urban_score") or 0.5)
                 uj = float(metas[j].get("urban_score") or 0.5)
                 same_lu = (metas[i].get("dominant_lu")
                            == metas[j].get("dominant_lu"))
+                same_cls = (budget is not None and
+                            _budget_class(float(rd[i]), budget)
+                            == _budget_class(float(rd[j]), budget))
                 score = L * (1.0 + 0.6 * (1.0 - abs(ui - uj))
-                             + (0.2 if same_lu else 0.0))
+                             + (0.2 if same_lu else 0.0)
+                             + (0.25 if same_cls else 0.0))
                 if best is None or score > best[0]:
                     best = (score, j, u, L)
             if best is None:
@@ -1696,6 +1962,303 @@ def _cap_zone_count(z, target, lines=None, max_ratio=1.05, passes=12):
             break
         print(f"[count-cap] {int(alive.sum())} / target {target}")
     return _pack(z, geoms, metas, alive, utm)
+
+
+def _split_to_target(z, target, lines=None, work_area_km2=None):
+    """Grow a too-coarse rural tessellation by splitting on OSM lines.
+
+    Sparse-road prefectures can end below the reference count after the
+    bad-shape pass.  Splitting only along real linework keeps the new
+    borders explainable; zones without internal lines stay intact.
+    """
+    if lines is None or not len(lines) or not target:
+        return z
+    try:
+        from .quality import split_with_roads
+    except ImportError:
+        from commercial_zoning.quality import split_with_roads
+    has_kind = "kind" in z.columns
+    cur = int(z[z["kind"].eq("land")].shape[0]) if has_kind else len(z)
+    if cur >= int(target * 0.95):
+        return z
+    if not work_area_km2:
+        try:
+            work_area_km2 = float(z.to_crs(z.estimate_utm_crs()).area.sum()) / 1e6
+        except Exception:  # noqa: BLE001
+            work_area_km2 = float(len(z))
+    avg = max(0.05, float(work_area_km2) / max(int(target), 1))
+    max_area = avg * 1.25
+    best = z
+    for _ in range(4):
+        try:
+            cand = split_with_roads(best, lines, max_area=max_area,
+                                    min_part=0.12, strict=False)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[count-grow] skipped: {exc}")
+            break
+        n_cand = (int(cand[cand["kind"].eq("land")].shape[0])
+                  if "kind" in cand.columns else len(cand))
+        if n_cand <= (int(best[best["kind"].eq("land")].shape[0])
+                      if "kind" in best.columns else len(best)):
+            break
+        best = cand
+        if n_cand >= int(target * 0.95):
+            break
+        max_area *= 0.65
+    if best is z:
+        return z
+    return _attach_micro(best, min_m2=150000.0)
+
+
+def _attach_road_density(z, lines):
+    """Attach road_km_per_km2 to every zone (admin path has no attributes)."""
+    if lines is None or not len(lines) or not len(z):
+        return z
+    try:
+        utm = z.estimate_utm_crs()
+        zm = z.to_crs(utm)
+        lm = lines.to_crs(utm)
+        geoms = lm.geometry.values
+        tree = shapely.STRtree(geoms)
+        dens = np.zeros(len(zm))
+        for i, g in enumerate(zm.geometry.values):
+            total = 0.0
+            for j in tree.query(g, predicate="intersects"):
+                try:
+                    total += g.intersection(geoms[int(j)]).length
+                except Exception:  # noqa: BLE001
+                    pass
+            dens[i] = (total / 1000.0) / max(g.area / 1e6, 1e-6)
+        out = z.copy()
+        out["road_density"] = dens
+        return out
+    except Exception as exc:  # noqa: BLE001
+        print(f"[density] attach skipped: {exc}")
+        return z
+
+
+def _split_admin_by_density(z, lines, min_part, default_max_area):
+    """Split townships with the mean area of their density class.
+
+    A dense township splits into ~1-3 km2 road-bounded parts, a rural one
+    keeps ~20 km2 parts, and a roadless desert township stays whole.  This
+    is the same density -> area budget used by the fine path.
+    """
+    try:
+        from .quality import split_with_roads
+    except ImportError:
+        from commercial_zoning.quality import split_with_roads
+    if lines is None or not len(lines) or not len(z):
+        return z
+    budget = area_budget()
+    if budget is None:
+        return split_with_roads(z, lines, max_area=default_max_area,
+                                min_part=min_part, strict=False)
+    try:
+        zz = _attach_road_density(z, lines)
+        dens = pd.to_numeric(zz.get("road_density", 0.0),
+                             errors="coerce").fillna(0.0).to_numpy()
+        groups = {}
+        for i, d in enumerate(dens):
+            groups.setdefault(_budget_class(float(d), budget), []).append(i)
+        parts = []
+        for c, idx in groups.items():
+            parts.append(split_with_roads(
+                z.iloc[idx], lines, max_area=_budget_mean(c, budget),
+                min_part=min_part, strict=False))
+        out = gpd.GeoDataFrame(pd.concat(parts, ignore_index=True), crs=z.crs)
+        print("[admin] density split: "
+              + " ".join(f"{c}:{len(ix)}" for c, ix in groups.items()),
+              flush=True)
+        return out
+    except Exception as exc:  # noqa: BLE001
+        print(f"[admin] density split skipped: {exc}")
+        return split_with_roads(z, lines, max_area=default_max_area,
+                                min_part=min_part, strict=False)
+
+
+def _split_oversized(z, max_km2, lines=None, cell_km2=None):
+    """Split zones far above the reference p90 into explainable parts.
+
+    Zones with internal OSM lines split along those lines.  Roadless rural
+    zones split into near-square blocks, which is the agreed fallback where
+    OSM has no linework to follow (never long strips).
+    """
+    if max_km2 <= 0 or not len(z):
+        return z
+    try:
+        from .quality import split_with_roads, _merge_small_faces
+    except ImportError:
+        from commercial_zoning.quality import (split_with_roads,
+                                               _merge_small_faces)
+    if lines is not None and len(lines):
+        try:
+            z = split_with_roads(z, lines, max_area=max_km2,
+                                 min_part=0.12, strict=False)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[max-area] road split skipped: {exc}")
+    crs0 = z.crs
+    try:
+        m = z.to_crs(z.estimate_utm_crs()).reset_index(drop=True)
+    except Exception:  # noqa: BLE001
+        return z
+    budget = area_budget()
+    fallback_cell = float(cell_km2 or max_km2)
+    has_kind = "kind" in m.columns
+    rows = []
+    changed = 0
+    for _, r in m.iterrows():
+        g = r["geometry"]
+        if ((has_kind and not r.get("kind") == "land")
+                or g is None or g.is_empty
+                or g.area / 1e6 <= max_km2 * 1.2):
+            rows.append(r)
+            continue
+        cell_km2 = fallback_cell
+        if budget is not None:
+            rd = float(r.get("road_density") or 0.0)
+            cell_km2 = _budget_mean(_budget_class(rd, budget), budget)
+        step = max(400.0, math.sqrt(max(float(cell_km2), 0.05)) * 1000.0)
+        minx, miny, maxx, maxy = g.bounds
+        pieces = []
+        x = minx
+        while x < maxx:
+            y = miny
+            while y < maxy:
+                cell = shapely.box(x, y, min(x + step, maxx),
+                                   min(y + step, maxy))
+                try:
+                    inter = g.intersection(cell)
+                except Exception:  # noqa: BLE001
+                    inter = None
+                if inter is not None:
+                    for p in shapely.get_parts(inter):
+                        if p.geom_type == "Polygon" and p.area > 1000.0:
+                            pieces.append(p)
+                y += step
+            x += step
+        if len(pieces) < 2:
+            rows.append(r)
+            continue
+        pieces = _merge_small_faces(
+            pieces, max(0.02, step * step / 1e6 * 0.02))
+        for p in pieces:
+            nr = r.copy()
+            nr["geometry"] = p
+            rows.append(nr)
+        changed += 1
+    if not changed:
+        return z
+    out = gpd.GeoDataFrame(rows, geometry="geometry", crs=m.crs)
+    out = out.to_crs(crs0)
+    out["zone"] = np.arange(1, len(out) + 1)
+    print(f"[max-area] split {changed} oversized zones into "
+          f"density-sized blocks", flush=True)
+    return out.reset_index(drop=True)
+
+
+def _zone_classes(z, budget):
+    if budget is None or "road_density" not in z.columns:
+        return None
+    rd = pd.to_numeric(z["road_density"], errors="coerce").fillna(0.0)
+    out = []
+    for d in rd.to_numpy():
+        c = _budget_class(float(d), budget)
+        out.append("rural" if c == "remote" else c)
+    return np.array(out, dtype=object)
+
+
+def _split_class(z, mask, quota, cls, lines, budget):
+    """Split one density class up to its quota, keeping the rest intact."""
+    if quota <= 0 or not mask.any() or int(mask.sum()) >= quota:
+        return z
+    sub = z[mask].reset_index(drop=True)
+    rest = z[~mask].reset_index(drop=True)
+    mean = _budget_mean(cls, budget)
+    sub = _split_oversized(sub, max(1.5, mean * 1.5), lines=lines,
+                           cell_km2=mean)
+    if len(sub) < quota:
+        try:
+            area_km2 = (float(sub.to_crs(sub.estimate_utm_crs()).area.sum())
+                        / 1e6)
+        except Exception:  # noqa: BLE001
+            area_km2 = float(max(len(sub), 1)) * mean
+        sub = _split_to_target(sub, quota, lines=lines,
+                               work_area_km2=area_km2)
+    if len(sub) < quota:
+        # Roadless cells: cut near-square blocks down to (and below) the
+        # class mean until the quota is met.
+        for factor in (0.8, 0.55):
+            if len(sub) >= quota:
+                break
+            sub = _split_oversized(sub, max(0.8, mean * factor),
+                                   lines=None, cell_km2=mean * factor)
+    return gpd.GeoDataFrame(pd.concat([rest, sub], ignore_index=True),
+                            crs=z.crs).reset_index(drop=True)
+
+
+def _enforce_zone_count(z, target, lines=None, work_area_km2=None,
+                        max_zone_km2=None, quotas=None):
+    """Bring a finished unit to its zone-count target.
+
+    With reference quotas, each density class is first grown/shrunk to its
+    own count (core/urban/rural), which reproduces the reference scheme's
+    spatial allocation instead of a single global merge.  Without quotas,
+    the area-budget target is enforced globally.
+    """
+    if not target or not len(z):
+        return z
+    target = int(target)
+    budget = area_budget()
+    area = float(work_area_km2 or 0.0)
+    if not area:
+        try:
+            area = float(z.to_crs(z.estimate_utm_crs()).area.sum()) / 1e6
+        except Exception:  # noqa: BLE001
+            area = float(max(len(z), 1))
+    avg = max(0.05, area / target)
+    mx = float(max_zone_km2 or avg * 3.0)
+    z = _split_oversized(z, mx, lines=lines, cell_km2=avg)
+    q3 = None
+    if quotas and budget is not None and "road_density" in z.columns:
+        q3 = {"core": int(quotas.get("core", 0)),
+              "urban": int(quotas.get("urban", 0))
+                       + int(quotas.get("town", 0)),
+              "rural": int(quotas.get("rural", 0))}
+        if sum(q3.values()) <= 0:
+            q3 = None
+    if q3 is not None:
+        for _ in range(2):
+            cls = _zone_classes(z, budget)
+            for c in ("rural", "urban", "core"):
+                if int((cls == c).sum()) < q3[c]:
+                    z = _split_class(z, cls == c, q3[c], c, lines, budget)
+            cls = _zone_classes(z, budget)
+            for c in ("core", "urban", "rural"):
+                if int((cls == c).sum()) > q3[c]:
+                    z = _cap_zone_count(z, q3[c], lines=lines,
+                                        max_ratio=1.0, only_mask=cls == c)
+            cls = _zone_classes(z, budget)
+            if all(int((cls == c).sum()) >= int(q3[c] * 0.95)
+                   for c in ("core", "urban", "rural")):
+                break
+        z = _cap_zone_count(z, target, lines=lines, max_ratio=1.0)
+    else:
+        z = _cap_zone_count(z, target, lines=lines, max_ratio=1.0)
+        z = _split_to_target(z, target, lines=lines,
+                             work_area_km2=work_area_km2)
+        if int(z.shape[0]) < int(target * 0.95):
+            # Roadless townships: force density-sized near-square blocks.
+            z = _split_oversized(z, max(1.0, avg * 1.2),
+                                 lines=lines, cell_km2=avg)
+        z = _cap_zone_count(z, target, lines=lines, max_ratio=1.0)
+    z["zone"] = np.arange(1, len(z) + 1)
+    if "kind" in z.columns:
+        print(f"[count-target] {len(z[z['kind'].eq('land')])} land / "
+              f"{len(z)} total zones (target {target})", flush=True)
+    else:
+        print(f"[count-target] {len(z)} zones (target {target})", flush=True)
+    return z
 
 
 def generate_guangdong_aggregate(bbox, force=False, scope="province",
@@ -1881,27 +2444,31 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
         # Huge counties use the admin engine.  Use the real administrative
         # polygon area, not the bbox: Nanshan's bbox includes Shenzhen Bay
         # and looked like a 1,450 km2 county although the district is 188.
-        bc = _bbox(bbox, scope=scope)
+        bc = _limit_bbox_to_local(_bbox(bbox, scope=scope))
         try:
             county_frame = _admin_frame_for(
                 bc, scope, admin_name, level=level, center=center)
         except Exception as exc:  # noqa: BLE001
             print(f"[frame] county polygon unavailable: {exc}")
         ref_area = float((_ref or {}).get("area_km2") or 0.0)
-        if county_frame is not None and ref_target and ref_area > 0:
-            raw_area = _geom_area_km2(county_frame)
-            # Only clip when the admin polygon is much larger than the
-            # reference land coverage (i.e. it includes a large sea area).
-            if raw_area > 1.5 * ref_area:
-                mask = _land_mask()
-                if mask is not None:
-                    try:
-                        inter = _poly(county_frame.intersection(mask))
-                        if inter is not None and not inter.is_empty:
-                            county_frame = inter
-                            print("[land] clipped to land coverage")
-                    except Exception as exc:  # noqa: BLE001
-                        print(f"[land] clip skipped: {exc}")
+        if county_frame is not None and ref_target:
+            mask = _land_mask()
+            if mask is not None:
+                try:
+                    # Administrative polygons along the coast include a
+                    # territorial sea rectangle (Jieyang: 1,321 km2 of open
+                    # water).  Clip to the reference land coverage, with a
+                    # small buffer so coastal land edges survive the coarse
+                    # outline.
+                    raw_area = _geom_area_km2(county_frame)
+                    inter = _poly(county_frame.intersection(mask.buffer(0.004)))
+                    if inter is not None and not inter.is_empty:
+                        county_frame = inter
+                        print(f"[land] clipped to land coverage "
+                              f"({raw_area:.0f} -> "
+                              f"{_geom_area_km2(county_frame):.0f} km2)")
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[land] clip skipped: {exc}")
         carea = (_geom_area_km2(county_frame) if county_frame is not None
                  else _area_km2(bc))
         print(f"[route] county {admin_name or ''} polygon {carea:.0f} km2")
@@ -1914,7 +2481,7 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
         return generate_admin_region(bbox, force=force, scope="city",
                                      admin_name=admin_name, level=level,
                                      center=center, progress=progress)
-    b = _bbox(bbox, city=city_mode, scope=scope)
+    b = _limit_bbox_to_local(_bbox(bbox, city=city_mode, scope=scope))
     area = _area_km2(b)
     work_area = area
     if scope == "county" and county_frame is not None:
@@ -1970,19 +2537,18 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
     model, feats = _model()
     if ref_target:
         target = max(24, min(4000, int(ref_target)))
-    elif city_mode:
-        target = max(60, min(3000, int(round(area / 6.0))))
-    elif scope == "county" and work_area > 1500.0:
-        # Very large counties (Conghua ~2,000 km2) at 1,400 zones spend
-        # ~15 min in the pipeline and leave many rural slivers.  A coarse
-        # 4 km2 target keeps them explainable and finishes much faster.
-        target = max(120, min(500, int(round(work_area / 4.0))))
     else:
-        fine_km2 = float(os.environ.get("XGB_FINE_TARGET_KM2", "1.0"))
-        target = max(24 if fine_km2 < 1.0 else 40,
-                     min(1400, int(round(work_area / max(fine_km2, 0.05)))))
+        target = None
+        try:
+            target = _density_target(b, lines_path, frame=mask_frame,
+                                     scope=scope, city_mode=city_mode)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[budget] density target skipped: {exc}")
+        if not target:
+            target = _auto_target(work_area, scope=scope,
+                                  city_mode=city_mode)
     _min_block = None
-    if ref_target:
+    if ref_target or city_mode or scope in ("city", "county"):
         # Keep the initial candidate count roughly 1.5-10x the final count:
         # merge sub-faces smaller than about one sixth of the reference mean
         # area before the XGB pair stage.
@@ -2020,7 +2586,9 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
             else ("60" if city_mode else "45")),
         "XGB_MIN_BLOCK_M2": (str(_min_block) if _min_block else
                              os.environ.get("XGB_MIN_BLOCK_M2", "1000")),
-        "XGB_FINAL_TARGET": "9999",
+        # Reference units keep a fine candidate set (the count cap follows);
+        # generic units consolidate in-pipeline to their area-derived target.
+        "XGB_FINAL_TARGET": ("9999" if ref_target else str(target)),
         "XGB_SMOOTH": os.environ.get("XGB_SMOOTH", "0"),
         "XGB_SMOOTH_TOL": os.environ.get("XGB_SMOOTH_TOL", "10" if city_mode else "16"),
         "XGB_ADMIN_CUT": os.environ.get("XGB_ADMIN_CUT", "4,5,6,8,10"),
@@ -2337,7 +2905,7 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
         z = z[z.geometry.notna() & ~z.geometry.is_empty].reset_index(drop=True)
         if mask_frame is not None:
             try:
-                z = _clip_to_admin(z, mask_frame)
+                z = _clip_to_admin(z, mask_frame, min_count=target or 0)
             except Exception as _cexc:  # noqa: BLE001
                 print(f"[frame] clip skipped: {_cexc}")
         # Clipping can return null/empty polygons, or mixed GeometryCollections
@@ -2353,7 +2921,7 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
         except Exception as _aexc:  # noqa: BLE001
             print(f"[micro] cleanup skipped: {_aexc}")
         try:
-            z = _merge_bad_zones(z, max_km2=2.0)
+            z = _merge_bad_zones(z, max_km2=2.0, min_count=target or 0)
         except Exception as _bexc:  # noqa: BLE001
             print(f"[bad] cleanup skipped: {_bexc}")
         try:
@@ -2363,7 +2931,7 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
         # Ribbon absorption can leave a less compact host; fold those back
         # into their neighbours before the near-square splitting pass.
         try:
-            z = _merge_bad_zones(z, max_km2=2.0)
+            z = _merge_bad_zones(z, max_km2=2.0, min_count=target or 0)
         except Exception as _b2exc:  # noqa: BLE001
             print(f"[bad2] cleanup skipped: {_b2exc}")
         # No-evidence ribbons (Baohe lake shore) must become near-square
@@ -2414,6 +2982,25 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
             z = _fill_holes_and_enclaves(z)
         except Exception as _fr2exc:  # noqa: BLE001
             print(f"[final-ribbon] skipped: {_fr2exc}")
+        if target and (ref_target or city_mode
+                       or scope in ("city", "county")):
+            _maxz = None
+            _quotas = None
+            if ref_target:
+                try:
+                    _p = (_ref or {}).get("area_p10_p50_p90")
+                    if _p and len(_p) >= 3:
+                        _maxz = max(2.0, float(_p[2]) * 1.5)
+                    _quotas = (_ref or {}).get("class_counts")
+                except Exception:  # noqa: BLE001
+                    _maxz = _quotas = None
+            try:
+                z = _enforce_zone_count(
+                    z, target, lines=lines_gdf,
+                    work_area_km2=work_area, max_zone_km2=_maxz,
+                    quotas=_quotas)
+            except Exception as _ctexc:  # noqa: BLE001
+                print(f"[count-target] skipped: {_ctexc}")
         # The pipeline computed the attribute card before quality splitting
         # and merging; splits duplicated the parent's area/pp onto every
         # shard and merges left the host's old values.  Refresh the two pure

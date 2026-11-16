@@ -126,6 +126,13 @@ def main():
         return [round(float(x), 3) for x in
                 np.nanpercentile(v, [10, 50, 90])] if len(v) else [0, 0, 0]
 
+    def scene_counts(grp):
+        vc = grp["场景区域属性"].astype(str).value_counts()
+        return {"core": int(vc.get("核心城区", 0)),
+                "urban": int(vc.get("非核心城区", 0)),
+                "town": int(vc.get("乡镇镇区", 0)),
+                "rural": int(vc.get("农村", 0))}
+
     def extent(g, main):
         b = g.bounds
         p = main.representative_point()
@@ -148,6 +155,7 @@ def main():
             "count": int(len(grp)),
             "area_km2": round(float(grp["_area"].sum()), 1),
             "area_p10_p50_p90": q(grp["_area"].to_numpy()),
+            "class_counts": scene_counts(grp),
             "counties": sorted(county_names_by_city.get(name, [])),
             "bbox": bbox,
             "center": center,
@@ -172,6 +180,7 @@ def main():
             "count": c,
             "area_km2": round(float(grp["_area"].sum()), 1),
             "area_p10_p50_p90": q(grp["_area"].to_numpy()),
+            "class_counts": scene_counts(grp),
             "bbox": bbox,
             "center": center,
             "level": "6",

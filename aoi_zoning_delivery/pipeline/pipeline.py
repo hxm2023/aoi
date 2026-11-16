@@ -89,7 +89,15 @@ def _center_for_bbox(bbox):
 
 
 CENTER_LONLAT = _center_for_bbox(BBOX)
-TARGET = int(os.environ.get("XGB_TARGET", 1707 if FULL else 282))
+TARGET = int(os.environ.get("XGB_TARGET", "0") or 0)
+if TARGET <= 0:
+    # No reference scheme for this region: derive the zone target from the
+    # area (about one zone per 1.2 km2), clamped to a practical range.
+    _bb = BBOX
+    _bb_km2 = ((_bb[2] - _bb[0]) * 111.32
+               * math.cos(math.radians((_bb[1] + _bb[3]) / 2.0))
+               * (_bb[3] - _bb[1]) * 110.57)
+    TARGET = max(40, min(4000, int(round(_bb_km2 / 1.2))))
 
 MAJOR_TREE = None
 WATER_TREE = None
@@ -174,7 +182,7 @@ _BBOX_KM2 = ((BBOX[2] - BBOX[0]) * 111.32
 SMOOTH_TOL = float(os.environ.get(
     "XGB_SMOOTH_TOL", "20" if _BBOX_KM2 < 20 else "16"))
 REFINE = os.environ.get("XGB_REFINE", "0") == "1"
-FINAL_TARGET = int(os.environ.get("XGB_FINAL_TARGET", "1720"))
+FINAL_TARGET = int(os.environ.get("XGB_FINAL_TARGET", "0") or 0)
 COMMERCIAL = os.environ.get("XGB_COMMERCIAL", "0") == "1"
 FAST_FINAL = os.environ.get("XGB_FAST_FINAL", "0") == "1"
 CITY_MODE = os.environ.get("XGB_CITY_MODE", "0") == "1"
@@ -2766,13 +2774,14 @@ def open_protrusions(zones, frame, radius=45.0, min_retain=0.75,
     return out
 
 
-def consolidate_to_count(zones, target=1720):
+def consolidate_to_count(zones, target=None):
     """Controlled final count: merge the smallest zones until target.
 
-    Smoothing no longer silently removes zones, so the merge result can be
-    above the reference count.  This pass does the final consolidation with
-    the same shape guards, but always merges the smallest remaining zone.
+    The target comes from the reference scheme where one exists, otherwise
+    from the area-derived TARGET.  Smoothing no longer silently removes
+    zones, so the merge result can sit above the target.
     """
+    target = TARGET if target is None else int(target)
     out = zones.copy().reset_index(drop=True)
     blocked = set()
     while True:
@@ -3864,7 +3873,7 @@ if __name__ == "__main__":
     zones["geometry"] = zones.geometry.intersection(frame)
     zones = zones[zones.geometry.notna() & ~zones.geometry.is_empty]
     zones = absorb_enclaves(zones, max_hole_km2=0.15)
-    zones = consolidate_to_count(zones, target=FINAL_TARGET)
+    zones = consolidate_to_count(zones, target=FINAL_TARGET or TARGET)
     zones = enforce_single_component(zones)
     zones = absorb_enclaves(zones, max_hole_km2=0.15)
     zones = repair_overlaps(zones)
