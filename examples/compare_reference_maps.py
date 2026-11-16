@@ -8,6 +8,13 @@ For each selected Guangdong city and for the whole province, the script:
   4. writes a three-panel PNG: generated zoning, reference grid, boundary
      overlay, plus an index.md.
 
+City figures default to the product's city mode: a ~12x11 km core around the
+city centre (the fine road-block path), matching what the delivery UI does
+when a city is selected.  ``--city-mode whole`` instead renders the whole
+prefecture through the administrative engine, whose base units are townships;
+that map has far fewer zones than a micro-grid and is provided only as a
+structural comparison.
+
 The reference CSV is read for evaluation and drawing only.  It is never
 committed, copied into the output directory, or used as an inference feature.
 Generated GeoJSON is written under <out-dir>/data and should stay untracked;
@@ -20,6 +27,7 @@ Usage:
       --regions 广州,深圳,佛山,东莞,珠海,汕头,全省
 
 Optional:
+  --city-mode core   city core fine path (default) or "whole" admin engine
   --force            regenerate zoning results instead of reusing caches
   --dpi 170          output resolution
   --ours-dir DIR     where generated GeoJSON is cached (default <out-dir>/data)
@@ -37,6 +45,7 @@ import geopandas as gpd
 import matplotlib
 import pandas as pd
 from shapely import wkt
+from shapely.geometry import box
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
@@ -101,15 +110,17 @@ def _clip_to_province(bbox: list, prov: list) -> list:
             min(bbox[2], prov[2]), min(bbox[3], prov[3])]
 
 
-def region_spec(name: str) -> dict:
+def region_spec(name: str, city_mode: str = "core") -> dict:
     name = name.strip()
     prov_bbox = _province_bbox()
     if name in ("全省", "广东省", "广东"):
         b = prov_bbox
         return {
             "label": "广东省", "key": "广东省", "kind": "province",
-            "admin": "广东", "level": "4",
+            "scope": "province", "admin": "广东", "level": "4",
             "bbox": b, "center": [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2],
+            "data_name": "广东省_province", "filename": "广东省.png",
+            "extent": None,
         }
     cat = providers.admin_catalog("guangdong")
     cand = [x for x in cat.get("cities", [])
@@ -118,28 +129,40 @@ def region_spec(name: str) -> dict:
         raise SystemExit(f"city not found in catalogue: {name}")
     item = cand[0]
     key = item["name"][:-1] if item["name"].endswith("市") else item["name"]
-    # Border-city catalogue bboxes can extend past the province extract;
-    # clip the extraction window so local PBF resolution stays valid.
-    bbox = _clip_to_province(item["bbox"], prov_bbox)
     center = item["center"]
+    if city_mode == "core":
+        cx, cy = center
+        bbox = _clip_to_province(
+            [cx - 0.06, cy - 0.05, cx + 0.06, cy + 0.05], prov_bbox)
+        return {
+            "label": f"{item['name']}核心区", "key": key, "kind": "city",
+            "scope": "core", "admin": item["name"], "level": item["level"],
+            "bbox": bbox, "center": center,
+            "data_name": f"{key}_core", "filename": f"{key}.png",
+            "extent": bbox,
+        }
+    # Whole prefecture: administrative engine, township-level base units.
+    bbox = _clip_to_province(item["bbox"], prov_bbox)
     if not (bbox[0] <= center[0] <= bbox[2] and bbox[1] <= center[1] <= bbox[3]):
         center = [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2]
     return {
-        "label": item["name"], "key": key, "kind": "city",
-        "admin": item["name"], "level": item["level"],
+        "label": f"{item['name']}（全市）", "key": key, "kind": "city",
+        "scope": "city", "admin": item["name"], "level": item["level"],
         "bbox": bbox, "center": center,
+        "data_name": f"{key}_whole", "filename": f"{key}_全市.png",
+        "extent": None,
     }
 
 
 def ours_for(spec: dict, data_dir: Path, force: bool) -> gpd.GeoDataFrame:
-    out = data_dir / f"{spec['key']}_ours.geojson"
+    out = data_dir / f"{spec['data_name']}_ours.geojson"
     if out.exists() and not force:
         _log(f"  reuse {out.name}")
         return gpd.read_file(out)
     _log(f"  generating {spec['label']} ...")
     res = generate_region(
         ",".join(str(x) for x in spec["bbox"]), force=force,
-        scope=spec["kind"], admin_name=spec["admin"],
+        scope=spec["scope"], admin_name=spec["admin"],
         level=spec["level"], center=spec["center"])
     g = gpd.read_file(res["geojson"])
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -168,7 +191,7 @@ def _set_extent(ax, bounds, pad=0.02):
 def render(spec: dict, ours: gpd.GeoDataFrame, refc: gpd.GeoDataFrame,
            out_png: Path, dpi: int) -> None:
     province = spec["kind"] == "province"
-    bounds = refc.total_bounds
+    bounds = spec.get("extent") or refc.total_bounds
     x0, y0, x1, y1 = bounds
     lat_mid = (y0 + y1) / 2
     km_aspect = ((x1 - x0) * abs(math.cos(math.radians(lat_mid)))) / max(
@@ -216,11 +239,11 @@ def render(spec: dict, ours: gpd.GeoDataFrame, refc: gpd.GeoDataFrame,
     fig.suptitle(
         f"{spec['label']}：OSM 矢量分区 vs 移动标准微网格",
         fontsize=17, y=0.985)
-    fig.text(
-        0.5, 0.012,
-        "标准微网格仅用于离线对比评估，不参与分区推理；"
-        "本引擎结果已裁剪到标准网格覆盖范围。",
-        ha="center", fontsize=9, color="#555555")
+    note = ("标准微网格仅用于离线对比评估，不参与分区推理；"
+            "本引擎结果已裁剪到标准网格覆盖范围。")
+    if spec["scope"] == "core":
+        note += " 城市图为产品默认的 12×11 km 核心区精细分区。"
+    fig.text(0.5, 0.012, note, ha="center", fontsize=9, color="#555555")
     fig.savefig(out_png, dpi=dpi, bbox_inches="tight",
                 facecolor="white")
     plt.close(fig)
@@ -233,7 +256,9 @@ def write_index(entries: list, out_dir: Path) -> None:
         "",
         "本引擎（OSM 矢量）与移动标准微网格的对比。"
         "标准微网格仅用于离线评估，不参与分区推理；"
-        "本引擎结果已裁剪到标准网格覆盖范围。",
+        "本引擎结果已裁剪到标准网格覆盖范围。"
+        "城市图使用产品默认的 12×11 km 核心区精细分区；"
+        "省图为行政区引擎概览。",
         "",
     ]
     for label, png in entries:
@@ -246,6 +271,7 @@ def main() -> None:
     ap.add_argument("--reference", required=True)
     ap.add_argument("--out-dir", default="figures/reference_compare")
     ap.add_argument("--regions", default="广州,深圳,佛山,东莞,珠海,汕头,全省")
+    ap.add_argument("--city-mode", choices=("core", "whole"), default="core")
     ap.add_argument("--ours-dir", default=None)
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--dpi", type=int, default=170)
@@ -268,15 +294,17 @@ def main() -> None:
     failed = []
     for label in labels:
         try:
-            spec = region_spec(label)
+            spec = region_spec(label, args.city_mode)
             _log(f"[{spec['label']}]")
             ours = ours_for(spec, data_dir, args.force)
             refc = (ref if spec["kind"] == "province"
                     else ref[ref["地市"].eq(spec["key"])])
+            if spec["scope"] == "core":
+                refc = gpd.clip(refc, box(*spec["bbox"]))
             if not len(refc):
                 raise RuntimeError(f"no reference zones for {spec['key']}")
             ours = clip_ours(ours, refc)
-            png = out_dir / f"{spec['key']}.png"
+            png = out_dir / spec["filename"]
             render(spec, ours, refc, png, args.dpi)
             entries.append((spec["label"], png.name))
         except Exception as exc:  # noqa: BLE001
