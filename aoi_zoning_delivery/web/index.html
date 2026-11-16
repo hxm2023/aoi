@@ -45,9 +45,6 @@
     <input id="bbox" placeholder="例如 113.25,23.10,113.29,23.13"/>
     <button id="genbbox" class="ghost">按 bbox 生成</button>
     <button id="fit" class="ghost">缩放到分区结果</button>
-    <label style="display:flex;align-items:center;gap:6px;margin-top:10px">
-      <input id="basemap" type="checkbox" style="width:auto"/> OSM 底图（需联网）
-    </label>
     <div id="status">等待生成。</div>
     <div id="progressWrap"><div id="progressBar"></div></div>
     <div id="legend">
@@ -63,11 +60,8 @@
 const COLORS = ["#a6cee3","#1f78b4","#b2df8a","#33a02c","#fb9a99",
                 "#e31a1c","#fdbf6f","#ff7f00","#cab2d6","#6a3d9a"];
 const EMPTY = {type:"FeatureCollection",features:[]};
-// Local MapLibre bundle + a background-only style.  The OSM raster basemap
-// is opt-in: a remote tile source that is slow/blocked keeps
-// isStyleLoaded() false forever, which used to delay the map "load" event
-// (and therefore the click handlers).  Zones render on the light background
-// with zero network, and the basemap can be switched on later.
+// Local MapLibre bundle + a background-only style.  Zones render on the
+// light background with zero network access; no external tile source.
 const map = new maplibregl.Map({
   container:"map",
   style:{version:8, sources:{},
@@ -75,23 +69,6 @@ const map = new maplibregl.Map({
   center:[114.06,22.54], zoom:11,
   preserveDrawingBuffer:true
 });
-function setBasemap(on){
-  if(on){
-    if(!map.getSource("osm")){
-      map.addSource("osm",{type:"raster",tileSize:256,
-        tiles:["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-        attribution:"© OpenStreetMap"});
-    }
-    if(!map.getLayer("osm")){
-      const before = map.getLayer("zones-fill") ? "zones-fill" : undefined;
-      map.addLayer({id:"osm",type:"raster",source:"osm",
-                    paint:{"raster-opacity":0.85}}, before);
-    }
-  }else{
-    if(map.getLayer("osm")) map.removeLayer("osm");
-    if(map.getSource("osm")) map.removeSource("osm");
-  }
-}
 map.addControl(new maplibregl.NavigationControl(),"top-right");
 window.__map = map;
 const statusEl = document.getElementById("status");
@@ -148,9 +125,9 @@ function ensureLayers(){
 }
 
 map.on("load", ensureLayers);
-// Bind the click handler immediately, not inside map.on("load"): with a
-// remote basemap the style can stay "loading" for seconds and clicks would
-// silently do nothing.  Query the layer at event time instead.
+// Bind the click handler immediately, not inside map.on("load"): the WebGL
+// style can still be settling and clicks would silently do nothing.  Query
+// the layer at event time instead.
 map.on("click",(e)=>{
   const feats = map.queryRenderedFeatures(e.point,{layers:["zones-fill"]});
   if(!feats.length) return;
@@ -167,7 +144,7 @@ map.on("mousemove",(e)=>{
 
 // Catalog loading must not wait for the map's WebGL "load" event: on slow or
 // software-rendered browsers that event can lag for seconds and the dropdowns
-// looked empty/broken until the basemap finished.
+// looked empty/broken until the map finished loading.
 function loadCatalogs(){
   fetch("/zoning/catalog").then(r=>r.json()).then(d=>{
     catalog=d.regions||[];
@@ -283,7 +260,6 @@ document.getElementById("gen").onclick=()=>{
 document.getElementById("fit").onclick=()=>{
   const src=map.getSource("zones"); if(src && src._data) fitZones(src._data);
 };
-document.getElementById("basemap").onchange=(e)=>setBasemap(e.target.checked);
 regionEl.onchange=()=>{
   const r=catalog.find(x=>x.id===regionEl.value);
   if(r) generate(r.bbox.join(","), "view");
@@ -303,7 +279,7 @@ provinceEl.onchange=async ()=>{
   cityEl.innerHTML='<option value="">加载市/州…</option>';
   countyEl.innerHTML='<option value="">选择县/区（可选）…</option>';
   admin=null;
-  statusEl.textContent=`加载 ${p.name} 的市/县目录…（首次需下载省级 PBF）`;
+  statusEl.textContent=`加载 ${p.name} 的市/县目录…（需将省级 PBF 放入 data/china）`;
   try{
     const r=await fetch(`/zoning/admin/${p.id}`);
     const d=await r.json();
