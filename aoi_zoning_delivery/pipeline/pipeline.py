@@ -2807,6 +2807,54 @@ def consolidate_to_count(zones, target=1720):
 def repair_overlaps(zones):
     """Remove any residual cross-zone overlaps after split/merge operations."""
     out = zones.copy().reset_index(drop=True)
+    if len(out) > 800:
+        # Large city units can have thousands of overlaps; the one-pair-per-
+        # pass loop below becomes quadratic.  Subtract each zone's overlaps
+        # once per pass (vectorised), then rebuild the tree.
+        from collections import defaultdict
+        for _pass in range(8):
+            geoms = np.asarray(out.geometry.values, dtype=object)
+            tree = shapely.STRtree(geoms)
+            a, b = tree.query(geoms, predicate="intersects")
+            mask = a < b
+            a, b = a[mask], b[mask]
+            if not len(a):
+                break
+            inter = shapely.intersection(geoms[a], geoms[b])
+            keep = shapely.area(inter) > 1.0
+            a, b, inter = a[keep], b[keep], inter[keep]
+            if not len(a):
+                break
+            ids = (np.asarray(out["zone"].astype(float))
+                   if "zone" in out.columns else np.arange(len(out), dtype=float))
+            drop = np.where(ids[a] > ids[b], a, b)
+            buckets = defaultdict(list)
+            for k, idx in enumerate(drop):
+                buckets[int(idx)].append(inter[k])
+            changed = 0
+            for idx, ints in buckets.items():
+                try:
+                    u = unary_union(ints)
+                except Exception:  # noqa: BLE001
+                    continue
+                try:
+                    g = out.at[idx, "geometry"].difference(u)
+                except Exception:  # noqa: BLE001
+                    continue
+                g = shapely.make_valid(g)
+                parts = [q for q in shapely.get_parts(g)
+                         if q.geom_type == "Polygon" and q.area > 1.0]
+                if parts:
+                    out.at[idx, "geometry"] = (
+                        parts[0] if len(parts) == 1 else unary_union(parts))
+                else:
+                    out.at[idx, "geometry"] = shapely.Polygon()
+                changed += 1
+            out = out[~out.geometry.is_empty].reset_index(drop=True)
+            if not changed:
+                break
+        print(f"[overlap] repaired, {len(out)} zones (fast)")
+        return out.reset_index(drop=True)
     for _ in range(200):
         geoms = np.asarray(out.geometry.values, dtype=object)
         tree = shapely.STRtree(geoms)
