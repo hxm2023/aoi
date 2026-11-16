@@ -2308,6 +2308,7 @@ def _repartition_strip_clusters(z, lines=None, max_aspect=2.5,
         return z
     rows = []
     replaced = set()
+    merged_clusters = 0
     for comp in comps:
         try:
             u = shapely.union_all([geoms[i] for i in comp])
@@ -2315,54 +2316,21 @@ def _repartition_strip_clusters(z, lines=None, max_aspect=2.5,
             continue
         if u.geom_type != "Polygon" or not u.is_valid:
             continue
-        n = len(comp)
-        area_m2 = u.area
-        mean_cell = area_m2 / n
-        if area_m2 < 2.0 * 1e6:
+        if u.area < 2.0 * 1e6:
             continue
-        # Area-weighted common long-axis direction (angles modulo 180).
-        c = np.array([math.cos(math.radians(2 * ori[i])) for i in comp])
-        s = np.array([math.sin(math.radians(2 * ori[i])) for i in comp])
-        w = np.array([geoms[i].area for i in comp])
-        theta = math.degrees(math.atan2(float((s * w).sum()),
-                                        float((c * w).sum()))) / 2.0
-        cen = u.centroid
-        ur = affinity.rotate(u, -theta, origin=cen)
-        minx, miny, maxx, maxy = ur.bounds
-        width = max(maxy - miny, 1.0)
-        length = max(maxx - minx, 1.0)
-        if length < 1.15 * width:
-            continue
-        dx = mean_cell / width
-        dx = max(0.7 * width, min(2.0 * width, dx))
-        dx = max(600.0, min(4000.0, dx))
-        pieces = []
-        x = minx
-        while x < maxx:
-            cell = shapely.box(x, miny - 50.0,
-                               min(x + dx, maxx), maxy + 50.0)
-            try:
-                inter = ur.intersection(cell)
-            except Exception:  # noqa: BLE001
-                inter = None
-            if inter is not None:
-                for p in shapely.get_parts(inter):
-                    if p.geom_type == "Polygon" and p.area > 1000.0:
-                        pieces.append(p)
-            x += dx
-        if len(pieces) < 2:
-            continue
-        pieces = _merge_small_faces(pieces, max(0.03, dx * width / 1e6 * 0.06))
-        if len(pieces) < 2:
+        au, _ = _mrr(u)
+        ppu = 4 * math.pi * u.area / max(u.length ** 2, 1e-9)
+        # Merge-only: keep the outer OSM boundary of the whole cluster and
+        # remove the internal parallel lines.  A corridor-shaped union
+        # (aspect > 5.5) or an ugly one is left to the pairwise pass.
+        if au > 5.5 or ppu < 0.20:
             continue
         host = max(comp, key=lambda i: geoms[i].area)
-        base = dict(metas[host])
-        for p in pieces:
-            pr = affinity.rotate(p, theta, origin=cen)
-            nr = dict(base)
-            nr["geometry"] = pr
-            rows.append(nr)
+        nr = dict(metas[host])
+        nr["geometry"] = u
+        rows.append(nr)
         replaced.update(comp)
+        merged_clusters += 1
     if not replaced:
         return z
     keep_rows = []
@@ -2374,7 +2342,7 @@ def _repartition_strip_clusters(z, lines=None, max_aspect=2.5,
         keep_rows.append(nr)
     out = gpd.GeoDataFrame(keep_rows + rows, geometry="geometry", crs=m.crs)
     out = out.to_crs(crs0).reset_index(drop=True)
-    print(f"[strip-cluster] re-cut {len(comps)} clusters "
+    print(f"[strip-cluster] merged {merged_clusters} clusters "
           f"({len(replaced)} zones -> {len(rows)} blocks)", flush=True)
     return out
 
@@ -2663,7 +2631,8 @@ def _repartition_strip_tiles(z, tile_m=3000.0, strip_aspect=2.8,
 def _merge_parallel_strips_post(z, target=None, max_aspect=2.5,
                                 max_angle=20.0, min_shared=30.0,
                                 passes=6, side_tol=30.0,
-                                aspect_gain=1.02, pp_keep=0.90):
+                                aspect_gain=1.02, pp_keep=0.90,
+                                floor_frac=0.92):
     """Merge side-by-side long-strip zones into compact blocks.
 
     Two adjacent zones that are both elongated and whose shared border runs
@@ -2697,13 +2666,13 @@ def _merge_parallel_strips_post(z, target=None, max_aspect=2.5,
 
     for _ in range(passes):
         n_alive = int(alive.sum())
-        if target and n_alive <= max(1, int(target * 0.92)):
+        if target and n_alive <= max(1, int(target * floor_frac)):
             break
         idx = [i for i in range(len(geoms)) if alive[i]]
         tree = shapely.STRtree([geoms[i] for i in idx])
         merged = 0
         for i in idx:
-            if target and int(alive.sum()) <= max(1, int(target * 0.92)):
+            if target and int(alive.sum()) <= max(1, int(target * floor_frac)):
                 break
             if not alive[i]:
                 continue
@@ -2786,7 +2755,7 @@ def _split_class(z, mask, quota, cls, lines, budget):
     sub = z[mask].reset_index(drop=True)
     rest = z[~mask].reset_index(drop=True)
     mean = _budget_mean(cls, budget)
-    sub = _split_oversized(sub, max(1.5, mean * 1.5), lines=lines,
+    sub = _split_oversized(sub, max(1.5, mean * 1.8), lines=lines,
                            cell_km2=mean)
     if len(sub) < quota:
         try:
@@ -2796,14 +2765,8 @@ def _split_class(z, mask, quota, cls, lines, budget):
             area_km2 = float(max(len(sub), 1)) * mean
         sub = _split_to_target(sub, quota, lines=lines,
                                work_area_km2=area_km2)
-    if len(sub) < quota:
-        # Roadless cells: cut near-square blocks down to (and below) the
-        # class mean until the quota is met.
-        for factor in (0.8, 0.55):
-            if len(sub) >= quota:
-                break
-            sub = _split_oversized(sub, max(0.8, mean * factor),
-                                   lines=None, cell_km2=mean * factor)
+    # If OSM road splits cannot reach the quota, keep fewer/larger zones
+    # rather than invent non-OSM grid cuts (the user's explainability rule).
     return gpd.GeoDataFrame(pd.concat([rest, sub], ignore_index=True),
                             crs=z.crs).reset_index(drop=True)
 
@@ -2829,6 +2792,17 @@ def _enforce_zone_count(z, target, lines=None, work_area_km2=None,
             area = float(max(len(z), 1))
     avg = max(0.05, area / target)
     mx = float(max_zone_km2 or avg * 3.0)
+    if (max_zone_km2 is None and budget is not None
+            and "road_density" in z.columns):
+        # The last (remote) tier has no hard upper limit, but stays bounded:
+        # desert/plateau zones may reach ~2.5x the remote mean.
+        try:
+            rmin = float(budget.get("thresholds", {}).get("rural_min", 0.15))
+            rd = pd.to_numeric(z["road_density"], errors="coerce").fillna(0.0)
+            if float((rd < rmin).mean()) > 0.30:
+                mx = max(mx, _budget_mean("remote", budget) * 2.5)
+        except Exception:  # noqa: BLE001
+            pass
     z = _split_oversized(z, mx, lines=lines, cell_km2=avg)
     q3 = None
     if quotas and budget is not None and "road_density" in z.columns:
@@ -2838,45 +2812,44 @@ def _enforce_zone_count(z, target, lines=None, work_area_km2=None,
               "rural": int(quotas.get("rural", 0))}
         if sum(q3.values()) <= 0:
             q3 = None
+    # Area/count tolerance: the standard scheme's boundaries are only ~60%
+    # visible in OSM, so forcing an exact zone count creates cuts that do
+    # not follow OSM.  Each class and the total may move by +/-12%; larger
+    # or smaller zones are preferred over non-OSM boundaries.
     if q3 is not None:
         for _ in range(2):
             cls = _zone_classes(z, budget)
             for c in ("rural", "urban", "core"):
-                if int((cls == c).sum()) < q3[c]:
+                if int((cls == c).sum()) < int(q3[c] * 0.88):
                     z = _split_class(z, cls == c, q3[c], c, lines, budget)
             cls = _zone_classes(z, budget)
             for c in ("core", "urban", "rural"):
-                if int((cls == c).sum()) > q3[c]:
-                    z = _cap_zone_count(z, q3[c], lines=lines,
+                if int((cls == c).sum()) > int(q3[c] * 1.12):
+                    z = _cap_zone_count(z, int(q3[c] * 1.12), lines=lines,
                                         max_ratio=1.0, only_mask=cls == c)
             cls = _zone_classes(z, budget)
-            if all(int((cls == c).sum()) >= int(q3[c] * 0.95)
+            if all(int(q3[c] * 0.88) <= int((cls == c).sum())
+                   <= int(q3[c] * 1.12)
                    for c in ("core", "urban", "rural")):
                 break
-        z = _cap_zone_count(z, target, lines=lines, max_ratio=1.0)
+        z = _cap_zone_count(z, target, lines=lines, max_ratio=1.12)
     else:
-        z = _cap_zone_count(z, target, lines=lines, max_ratio=1.0)
-        z = _split_to_target(z, target, lines=lines,
-                             work_area_km2=work_area_km2)
-        if int(z.shape[0]) < int(target * 0.95):
-            # Roadless townships: force density-sized near-square blocks.
-            z = _split_oversized(z, max(1.0, avg * 1.2),
-                                 lines=lines, cell_km2=avg)
-        z = _cap_zone_count(z, target, lines=lines, max_ratio=1.0)
-    # Structural cleanup: no side-by-side long strips.  Cluster re-cuts fix
-    # simple adjacency clusters, the region pass fixes agricultural belts
-    # where strips are separated by third zones, and the pairwise pass
-    # absorbs the remainder.  This runs for every targeted unit (including
-    # the fast path) and may stop at 92% of the target rather than recreate
-    # strips just to hit the count exactly.
+        z = _cap_zone_count(z, target, lines=lines, max_ratio=1.12)
+        if int(z.shape[0]) < int(target * 0.88):
+            # Grow only along OSM roads; never invent a grid to hit a count.
+            z = _split_to_target(z, target, lines=lines,
+                                 work_area_km2=work_area_km2)
+        z = _cap_zone_count(z, target, lines=lines, max_ratio=1.12)
+    # Merge-only strip cleanup: a whole cluster of side-by-side strips
+    # becomes one larger OSM-bounded zone; the remainder is absorbed into
+    # compact neighbours or blocks.  No grid re-cut is applied.
     try:
         z = _repartition_strip_clusters(z)
-        z = _repartition_strip_regions(z)
     except Exception as exc:  # noqa: BLE001
-        print(f"[strip-region] skipped: {exc}")
-    z = _merge_parallel_strips_post(z, target=target)
-    if int(z.shape[0]) > int(target * 1.02):
-        z = _cap_zone_count(z, target, lines=lines, max_ratio=1.02)
+        print(f"[strip-cluster] skipped: {exc}")
+    z = _merge_parallel_strips_post(z, target=target, floor_frac=0.85)
+    if int(z.shape[0]) > int(target * 1.12):
+        z = _cap_zone_count(z, target, lines=lines, max_ratio=1.12)
     z["zone"] = np.arange(1, len(z) + 1)
     if "kind" in z.columns:
         print(f"[count-target] {len(z[z['kind'].eq('land')])} land / "
@@ -2972,6 +2945,14 @@ def generate_guangdong_aggregate(bbox, force=False, scope="province",
                     level=u["level"], center=u["center"],
                     progress=_prog, target_count=u["count"])
                 g = gpd.read_file(res["geojson"])
+            # Structural cleanup before aggregation: whole strip clusters
+            # become larger OSM-bounded zones; the remainder is absorbed.
+            try:
+                g = _repartition_strip_clusters(g, min_size=2)
+                g = _merge_parallel_strips_post(
+                    g, target=int(u["count"]), floor_frac=0.85)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[agg] strip cleanup skipped for {u['name']}: {exc}")
             # Per-city count control: the reference count is the sum of the
             # city's county counts, so cap each city unit before merging.
             g = _cap_zone_count(g, u["count"], max_ratio=1.0)
@@ -3479,7 +3460,10 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
         # Global fallback: if the road-based result still has pathology,
         # compare with a regular micro-grid clipped to the same land frame.
         # It must be a real improvement, not the old always-true test.
-        if bad > 0 or qs < 93:
+        # The grid alternative is only ever used when the road engine
+        # produced almost nothing.  Building 20k+ cells for a 2,000-zone
+        # city just to discard the result was the main slow path.
+        if len(z) < 10 and (bad > 0 or qs < 93):
             try:
                 import pyogrio
                 from shapely.ops import unary_union
@@ -3624,7 +3608,7 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
                 try:
                     _p = (_ref or {}).get("area_p10_p50_p90")
                     if _p and len(_p) >= 3:
-                        _maxz = max(2.0, float(_p[2]) * 1.5)
+                        _maxz = max(2.0, float(_p[2]) * 1.8)
                     _quotas = (_ref or {}).get("class_counts")
                 except Exception:  # noqa: BLE001
                     _maxz = _quotas = None

@@ -42,7 +42,9 @@
       "p10": 0.524,
       "p50": 1.002,
       "p90": 2.444,
-      "mean": 1.386
+      "mean": 1.386,
+      "min_factor": 0.55,
+      "max_factor": 1.8
     },
     "urban": {
       "label": "城区/乡镇",
@@ -50,7 +52,9 @@
       "p10": 0.789,
       "p50": 1.975,
       "p90": 5.398,
-      "mean": 2.759
+      "mean": 2.759,
+      "min_factor": 0.55,
+      "max_factor": 1.8
     },
     "rural": {
       "label": "农村",
@@ -58,12 +62,22 @@
       "p10": 3.445,
       "p50": 16.659,
       "p90": 41.201,
-      "mean": 20.956
+      "mean": 20.956,
+      "min_factor": 0.55,
+      "max_factor": 1.8
     },
     "remote": {
       "label": "沙漠/高原等稀疏区",
       "mean": 75.7,
-      "derived": true
+      "derived": true,
+      "min_factor": 0.55,
+      "max_factor": 1.8,
+      "max_km2": 250.0
     }
+  },
+  "area_tolerance": {
+    "min_factor": 0.55,
+    "max_factor": 1.8,
+    "note": "zones may be 45% smaller or 80% larger than the class mean to keep OSM boundaries"
   }
 }
