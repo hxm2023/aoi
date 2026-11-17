@@ -551,7 +551,8 @@ def _key(b, city_mode=False, variant=""):
         "XGB_FAST_FINAL", "XGB_FAST_QUALITY",
         "XGB_RURAL_REL", "XGB_WANT_RURAL", "XGB_WANT_LOW",
         "XGB_MERGE_MODE", "XGB_PROB_MIN_P", "XGB_PROB_MAX_AREA",
-        "XGB_SOFT_FINALIZE"))
+        "XGB_PROB_CORE_MAX_AREA", "XGB_PROB_URBAN_MAX_AREA",
+        "XGB_SOFT_FINALIZE", "XGB_FAST_QUALITY"))
     _rt = _targets_path()
     rtstamp = _rt.stat().st_mtime_ns if _rt is not None else "none"
     raw = (",".join(f"{x:.4f}" for x in b)
@@ -3481,7 +3482,7 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
         # Large reference-targeted city units already went through the
         # pipeline's road/merge cleanup; the extra per-zone quality passes are
         # quadratic at this scale and are skipped.
-        _fast_q = (os.environ.get("XGB_FAST_QUALITY") == "1"
+        _fast_q = (os.environ.get("XGB_FAST_QUALITY", "1") == "1"
                    and work_area > 200)
         # Bind the module-level helpers explicitly: assigning them inside
         # the conditional below otherwise makes them unbound locals when the
