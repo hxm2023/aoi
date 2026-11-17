@@ -280,20 +280,27 @@ def _cached_unit_file(name):
     if meta.get("kind") == "county":
         city = _strip_admin(meta.get("city", ""))
         prefix = f"{city}__" if city else ""
+    names = [name]
+    if meta.get("kind") == "province" and not name.endswith("省"):
+        names.append(name + "省")
     ver_env = os.environ.get("XGB_SERVICE_VERSION")
     if ver_env:
         # Iteration / regression: exact version only, so a file from another
         # policy cannot satisfy the lookup just because it is newest.
-        exact = (CACHE / "agg_units"
-                 / f"{prefix}{name}-density-{ver_env}.geojson")
-        return exact if exact.exists() else None
-    # Delivery server (no version pin): use the newest pre-generated unit.
-    cands = list((CACHE / "agg_units").glob(
-        f"{prefix}{name}-density-*.geojson"))
-    if not cands:
+        for nm in names:
+            exact = (CACHE / "agg_units"
+                     / f"{prefix}{nm}-density-{ver_env}.geojson")
+            if exact.exists():
+                return exact
         return None
-    cands.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-    return cands[0]
+    # Delivery server (no version pin): use the newest pre-generated unit.
+    for nm in names:
+        cands = list((CACHE / "agg_units").glob(
+            f"{prefix}{nm}-density-*.geojson"))
+        if cands:
+            cands.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            return cands[0]
+    return None
 
 
 _LAND_MASK = None
