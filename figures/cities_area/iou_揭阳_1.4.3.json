@@ -1,0 +1,15 @@
+{
+ "city": "揭阳",
+ "ours": 523,
+ "refs": 633,
+ "ours_area_km2": 5288.5,
+ "refs_area_km2": 5253.2,
+ "pairs": 2640,
+ "iou_ref_best_mean": 0.274,
+ "iou_greedy_1_1": 0.3362,
+ "matched": 394,
+ "matched_frac": 0.6224,
+ "iou_allref": 0.2092,
+ "area_p50_ours": 4.566,
+ "area_p50_ref": 5.564
+}

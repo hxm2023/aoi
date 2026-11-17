@@ -1,0 +1,15 @@
+{
+ "city": "珠海",
+ "ours": 378,
+ "refs": 464,
+ "ours_area_km2": 1960.2,
+ "refs_area_km2": 1730.1,
+ "pairs": 1708,
+ "iou_ref_best_mean": 0.2355,
+ "iou_greedy_1_1": 0.3013,
+ "matched": 279,
+ "matched_frac": 0.6013,
+ "iou_allref": 0.1812,
+ "area_p50_ours": 2.096,
+ "area_p50_ref": 1.597
+}

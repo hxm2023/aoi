@@ -1,0 +1,15 @@
+{
+ "city": "东莞",
+ "ours": 1058,
+ "refs": 1357,
+ "ours_area_km2": 2456.7,
+ "refs_area_km2": 2446.4,
+ "pairs": 5679,
+ "iou_ref_best_mean": 0.2898,
+ "iou_greedy_1_1": 0.3478,
+ "matched": 874,
+ "matched_frac": 0.6441,
+ "iou_allref": 0.224,
+ "area_p50_ours": 1.937,
+ "area_p50_ref": 1.279
+}

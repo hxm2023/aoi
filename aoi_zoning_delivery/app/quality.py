@@ -1087,23 +1087,31 @@ def repair_overlaps_zones(zones, min_area=0.1):
     for i, j in pairs:
         gi = z.at[i, "geometry"]
         gj = z.at[j, "geometry"]
-        inter = gi.intersection(gj)
-        if inter.is_empty or inter.area < min_area:
+        if gi is None or gj is None:
+            continue
+        try:
+            inter = gi.intersection(gj)
+        except Exception:  # noqa: BLE001 - one pathological pair must not abort
+            continue
+        if inter is None or inter.is_empty or inter.area < min_area:
             continue
         # remove the overlap from the smaller zone (usually the new shard)
-        if gi.area <= gj.area:
-            nh = gj.difference(gi)
-            if nh.geom_type == "Polygon" and not nh.is_empty:
-                z.at[j, "geometry"] = nh
+        try:
+            if gi.area <= gj.area:
+                nh = gj.difference(gi)
+                if nh.geom_type == "Polygon" and not nh.is_empty:
+                    z.at[j, "geometry"] = nh
+                else:
+                    z.at[i, "geometry"] = gi.difference(gj)
             else:
-                z.at[i, "geometry"] = gi.difference(gj)
-        else:
-            nh = gi.difference(gj)
-            if nh.geom_type == "Polygon" and not nh.is_empty:
-                z.at[i, "geometry"] = nh
-            else:
-                z.at[j, "geometry"] = gj.difference(gi)
-        fixed += 1
+                nh = gi.difference(gj)
+                if nh.geom_type == "Polygon" and not nh.is_empty:
+                    z.at[i, "geometry"] = nh
+                else:
+                    z.at[j, "geometry"] = gj.difference(gi)
+            fixed += 1
+        except Exception:  # noqa: BLE001
+            continue
     print(f"[overlap-q] fixed {fixed} overlaps")
     z["geometry"] = z.geometry.map(shapely.make_valid)
     z = z[z.geometry.notna() & ~z.geometry.is_empty].reset_index(drop=True)

@@ -41,8 +41,12 @@ class _StandaloneConfig:
         "+x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs")
 
 
-C = _StandaloneConfig()
-R = None
+try:  # training mode uses the reference labels from the zoning package
+    from zoning import config as C
+    from zoning import reference as R
+except Exception:  # noqa: BLE001 - standalone delivery copy
+    C = _StandaloneConfig()
+    R = None
 
 PBF = Path(os.environ["XGB_PBF"]) if os.environ.get("XGB_PBF") else (ROOT / "data" / "china" / "guangdong-260918.osm.pbf")
 CFG = Path(__file__).resolve().parent / "osmconf.ini"
@@ -164,12 +168,16 @@ def _major_frac(g, maxd=18.0):
 # village boundaries.  Keep the district boundary only, use big landuse
 # polygons as additional cuts, and smooth shared arcs at the end.
 ADMIN_CUT_LEVELS = set(
-    os.environ.get("XGB_ADMIN_CUT", "4,5,6,8,10").split(","))
-LU_CUT = os.environ.get("XGB_LU_CUT", "1") == "1"
+    os.environ.get("XGB_ADMIN_CUT", "6,8").split(","))
+LU_CUT = os.environ.get("XGB_LU_CUT", "0") == "1"
 LU_CLASSES = {
     "industrial", "commercial", "retail", "construction", "military",
     "cemetery", "education", "religious", "recreation_ground",
     "forest", "grass", "farmland", "orchard", "meadow",
+}
+BUILT_CLASSES = {
+    "industrial", "commercial", "retail", "construction", "military",
+    "education", "religious", "recreation_ground",
 }
 LU_MIN_KM2 = float(os.environ.get("XGB_LU_MIN", "0.12"))
 RAW_LINES = os.environ.get("XGB_RAW_LINES", "1") == "1"
@@ -194,7 +202,7 @@ OPEN2_R = float(os.environ.get("XGB_OPEN2_R", "80"))
 OPEN2 = os.environ.get("XGB_OPEN2", "1") == "1"
 CONCAVE = os.environ.get("XGB_CONCAVE", "1") == "1"
 LOCAL_TARGET = os.environ.get("XGB_LOCAL_TARGET", "1") == "1"
-RURAL_CUTS = os.environ.get("XGB_RURAL_CUTS", "1") == "1"
+RURAL_CUTS = os.environ.get("XGB_RURAL_CUTS", "0") == "1"
 PLACE_SPLIT = os.environ.get("XGB_PLACE_SPLIT", "1") == "1"
 
 
@@ -845,20 +853,40 @@ def build_blocks(lines):
     _gate = gate_local_roads(lines, admin, water)
     if _gate is not None:
         is_local = is_local & _gate.reindex(lines.index).fillna(False).astype(bool)
-    cut_mode = os.environ.get("XGB_CUT", "long_local")
-    use_local = cut_mode != "major_minor"
-    if cut_mode == "all_local":
-        local_mask = is_local
-    elif use_local:
-        local_mask = is_local & (lines["length"] >= 500.0)
+    cut_mode = os.environ.get("XGB_CUT", "tiered")
+    tiered = cut_mode == "tiered"
+    if tiered:
+        # tier1: river + admin L6/L8; tier2: major/minor/rail/barrier;
+        # tier3: local roads only inside built-up landuse + streams.
+        is_major_t = hw.isin({"motorway", "trunk", "primary", "secondary"})
+        is_minor_t = hw.eq("tertiary")
+        is_local_t = hw.isin({"residential", "unclassified",
+                              "living_street"})
+        _built = (lu[lu["landuse"].astype("string").isin(BUILT_CLASSES)]
+                  if len(lu) else lu)
+        if len(_built):
+            built_u = unary_union(_built.geometry.buffer(300.0))
+            is_local_t = is_local_t & lines.intersects(built_u)
+        else:
+            is_local_t = is_local_t & False
+        local_mask = is_local_t
+        road_mask = is_major_t | is_minor_t | is_local_t
     else:
-        local_mask = False
+        use_local = cut_mode != "major_minor"
+        if cut_mode == "all_local":
+            local_mask = is_local
+        elif use_local:
+            local_mask = is_local & (lines["length"] >= 500.0)
+        else:
+            local_mask = False
     frame = study_frame()
 
     # Merge each named/ref road first, then node the whole cut network.  This
     # is the difference between "20 OSM ways" and "one road": linemerge joins
     # through degree-2 vertices and stops at real junctions.
-    if cut_mode == "major":
+    if tiered:
+        pass  # road_mask already set above
+    elif cut_mode == "major":
         # Whole-city mode: only motorway/trunk/primary (plus admin, water and
         # large landuse below).  Using every tertiary road across a 10,000 km2
         # prefecture would create tens of thousands of blocks.
@@ -885,9 +913,18 @@ def build_blocks(lines):
     # noding, so a river crossing no longer breaks the road identity.
     _natl = (lines["natural"] if "natural" in lines.columns
              else pd.Series("", index=lines.index, dtype="string"))
-    other = lines[(lines["railway"].notna()
-                   | lines["waterway"].isin({"river", "canal"})
-                   | _natl.astype("string").eq("coastline"))]
+    if tiered:
+        _stream = (lines["waterway"].isin({"stream", "drain", "ditch"})
+                   & (lines["length"] >= 400.0))
+        _barrier = (lines["barrier"].notna()
+                    & (lines["length"] >= 30.0)) if "barrier" in lines             else pd.Series(False, index=lines.index)
+        other = lines[(lines["railway"].notna()
+                       | lines["waterway"].isin({"river", "canal"})
+                       | _stream | _barrier)]
+    else:
+        other = lines[(lines["railway"].notna()
+                       | lines["waterway"].isin({"river", "canal"})
+                       | _natl.astype("string").eq("coastline"))]
     print(f"[merge-roads] {n_ways} OSM road ways -> {n_road_lines} named/ref "
           f"lines -> {len(strokes)} strokes")
     parts = []
@@ -901,19 +938,20 @@ def build_blocks(lines):
         for p in shapely.get_parts(h):
             if p.geom_type in ("LineString", "MultiLineString") and not p.is_empty:
                 parts.append(p)
-    if LU_CUT:
+    if LU_CUT and not tiered:
         for geom in lu.geometry.boundary:
             h = geom.intersection(frame)
             for p in shapely.get_parts(h):
                 if p.geom_type in ("LineString", "MultiLineString") and not p.is_empty:
                     parts.append(p)
-    if os.environ.get("XGB_LEISURE_CUT", "1") == "1":
+    if (not tiered
+            and os.environ.get("XGB_LEISURE_CUT", "0") == "1"):
         for geom in leis.geometry.boundary:
             h = geom.intersection(frame)
             for p in shapely.get_parts(h):
                 if p.geom_type in ("LineString", "MultiLineString") and not p.is_empty:
                     parts.append(p)
-    if RURAL_CUTS:
+    if RURAL_CUTS and not tiered:
         # Outside the urban core, terrain and streams are often the only
         # OSM-visible split.  The reference has 28% boundaries with no
         # road/admin explanation in rural Kuichong, so these cuts are the

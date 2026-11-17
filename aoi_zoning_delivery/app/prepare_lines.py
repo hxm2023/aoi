@@ -47,7 +47,12 @@ def build_lines(bbox, out_path):
                                      "construction", "proposed"})).fillna(False).astype(bool)
     is_river = g["waterway"].isin({"river", "canal"}).fillna(False).astype(bool)
     is_stream = g["waterway"].isin({"stream", "drain", "ditch"}).fillna(False).astype(bool)
-    keep = keep_road | is_rail | is_river | is_stream
+    # barrier_line is a tier-2 cut signal; power lines and paths are not.
+    is_barrier = (g["barrier"].notna()
+                  & ~g["barrier"].isin({"no", "entrance", "gate", "bollard",
+                                        "lift_gate", "swing_gate"}).fillna(False)
+                  ).astype(bool)
+    keep = keep_road | is_rail | is_river | is_stream | is_barrier
     c = g[keep].copy().to_crs(_DEFAULT_CRS)
     c["geometry"] = c.geometry.map(make_valid)
     c = c[c.geometry.notna() & ~c.geometry.is_empty]
@@ -61,8 +66,11 @@ def build_lines(bbox, out_path):
     def klass(row):
         if pd.notna(row["railway"]):
             return "rail"
-        if pd.notna(row["waterway"]):
-            return "water"
+        ww = row.get("waterway")
+        if pd.notna(ww):
+            return "river" if ww in ("river", "canal") else "stream"
+        if pd.notna(row.get("barrier")):
+            return "barrier"
         if row["highway"] in ROAD_MAJOR:
             return "major"
         return "soft"

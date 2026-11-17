@@ -38,10 +38,6 @@
     <select id="city" style="margin-top:6px"><option value="">选择市/州（可选）…</option></select>
     <select id="county" style="margin-top:6px"><option value="">选择县/区（可选）…</option></select>
     <button id="genadmin" class="primary" style="margin-top:6px">生成所选行政区</button>
-    <label style="display:flex;align-items:center;gap:6px;margin-top:4px">
-      <input id="quickcity" type="checkbox" style="width:auto" checked/>
-      城市/县区快速预览（推荐，约 2–5 分钟）
-    </label>
     <button id="clearcache" class="ghost">清除缓存与结果</button>
     <label>或使用当前地图视野</label>
     <button id="gen" class="primary">生成当前视野分区</button>
@@ -325,8 +321,7 @@ loadCatalogs();
 
 async function generate(bbox, scope="view", adminName=null, level=null, center=null){
   currentBbox = bbox;
-  const quickEl=document.getElementById("quickcity");
-  const quick = (scope==="city"||scope==="county") && !!(quickEl && quickEl.checked);
+  const quick = false;
   // Selecting a province starts a demo job; a quick city/county click starts
   // another.  Only the newest job may write the map/status, otherwise the
   // slower earlier job overwrites the newer result.

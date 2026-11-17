@@ -1,0 +1,15 @@
+{
+ "city": "深圳",
+ "ours": 1510,
+ "refs": 1707,
+ "ours_area_km2": 2551.2,
+ "refs_area_km2": 2438.0,
+ "pairs": 7187,
+ "iou_ref_best_mean": 0.2858,
+ "iou_greedy_1_1": 0.3303,
+ "matched": 1101,
+ "matched_frac": 0.645,
+ "iou_allref": 0.213,
+ "area_p50_ours": 1.418,
+ "area_p50_ref": 0.704
+}

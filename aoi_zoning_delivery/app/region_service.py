@@ -229,6 +229,16 @@ def _density_target(b, lines_path, frame=None, scope=None, city_mode=False):
     return target
 
 
+def _tiny_admin_unit(meta):
+    """True for non-county OSM boundary artifacts with no reference cover."""
+    if not meta or float(meta.get("area_km2") or 0.0) > 0.0:
+        return False
+    b = meta.get("bbox")
+    if not b:
+        return False
+    return (b[2] - b[0]) * (b[3] - b[1]) < 0.01
+
+
 def _strip_admin(name):
     s = (name or "").strip()
     for suf in ("特别行政区", "自治区", "自治州", "自治县", "地区",
@@ -248,8 +258,42 @@ def _target_meta(name):
     if key in t.get("cities", {}):
         return {"kind": "city", **t["cities"][key]}
     if key == t.get("province"):
-        return {"kind": "province", "count": int(t.get("total", 0))}
+        return {"kind": "province", "count": int(t.get("total", 0)),
+                "class_area_share": t.get("class_area_share")}
     return None
+
+
+def _class_area_shares(name):
+    """Reference class *area* mix for an admin unit (no zone counts)."""
+    meta = _target_meta(name)
+    if not meta:
+        return None
+    return meta.get("class_area_share") or None
+
+
+def _cached_unit_file(name):
+    """Newest pre-generated unit result for a county or direct city."""
+    meta = _target_meta(name)
+    if not meta:
+        return None
+    prefix = ""
+    if meta.get("kind") == "county":
+        city = _strip_admin(meta.get("city", ""))
+        prefix = f"{city}__" if city else ""
+    ver_env = os.environ.get("XGB_SERVICE_VERSION")
+    if ver_env:
+        # Iteration / regression: exact version only, so a file from another
+        # policy cannot satisfy the lookup just because it is newest.
+        exact = (CACHE / "agg_units"
+                 / f"{prefix}{name}-density-{ver_env}.geojson")
+        return exact if exact.exists() else None
+    # Delivery server (no version pin): use the newest pre-generated unit.
+    cands = list((CACHE / "agg_units").glob(
+        f"{prefix}{name}-density-*.geojson"))
+    if not cands:
+        return None
+    cands.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    return cands[0]
 
 
 _LAND_MASK = None
@@ -1845,7 +1889,8 @@ def generate_admin_region(bbox, force=False, scope="city", admin_name=None,
             if _dtarget:
                 z8 = _enforce_zone_count(
                     z8, _dtarget, lines=lines, work_area_km2=_zarea,
-                    core_target=_LAST_DENSITY_QUOTAS.get("core"))
+                    core_target=_LAST_DENSITY_QUOTAS.get("core"),
+                    class_shares=_class_area_shares(admin_name))
                 z8["geometry"] = z8.geometry.map(_poly)
                 z8 = z8[z8.geometry.notna() & ~z8.geometry.is_empty]
                 z8 = z8.reset_index(drop=True)
@@ -2147,12 +2192,72 @@ def _split_admin_by_density(z, lines, min_part, default_max_area):
                                 min_part=min_part, strict=False)
 
 
+def _compact_split(g, target_km2, depth=0):
+    """Bisect a roadless polygon into compact, non-grid-aligned pieces.
+
+    An axis-aligned grid reads as a perfunctory checkerboard at the city
+    edge.  Cutting across the long axis of the minimum rotated rectangle,
+    with a deterministic jitter and recursing on both halves, keeps pieces
+    near-square and compact without a shared global grid.
+    """
+    a = g.area / 1e6
+    if (a <= max(target_km2, 0.01) * 1.05 or depth >= 14
+            or g is None or g.is_empty):
+        return [g]
+    ux, uy = 1.0, 0.0
+    try:
+        rr = shapely.minimum_rotated_rectangle(g)
+        cs = list(rr.exterior.coords)[:4]
+        e1 = (cs[1][0] - cs[0][0], cs[1][1] - cs[0][1])
+        e2 = (cs[2][0] - cs[1][0], cs[2][1] - cs[1][1])
+        ux, uy = e1 if math.hypot(*e1) >= math.hypot(*e2) else e2
+    except Exception:  # noqa: BLE001
+        pass
+    c = g.centroid
+    h = (math.sin(c.x * 12.9898 + c.y * 78.233) * 43758.5453) % 1.0
+    from shapely.ops import split as _shp_split
+    for dk in (0.0, math.pi / 4, -math.pi / 4):
+        ang = (math.atan2(uy, ux) + math.pi / 2 + (h - 0.5) * 0.5 + dk)
+        nx, ny = math.cos(ang), math.sin(ang)
+        L = 4.0 * math.sqrt(max(a, 0.01)) * 1000.0 + 10000.0
+        cutter = shapely.LineString(
+            [(c.x - nx * L, c.y - ny * L), (c.x + nx * L, c.y + ny * L)])
+        try:
+            parts = [p for p in _shp_split(g, cutter).geoms
+                     if p.geom_type == "Polygon" and p.area > 0]
+        except Exception:  # noqa: BLE001
+            parts = []
+        if len(parts) < 2:
+            continue
+        big = [p for p in parts if p.area >= 0.02 * g.area]
+        if len(big) < 2:
+            continue
+        # Keep the cut but fold slivers back into their longest-shared
+        # neighbour; rejecting the whole cut left 16 km2 blocks unsplit.
+        for s in [p for p in parts if p.area < 0.02 * g.area]:
+            best, bl = -1, 0.0
+            for j, p in enumerate(big):
+                try:
+                    shared = s.boundary.intersection(p.boundary).length
+                except Exception:  # noqa: BLE001
+                    continue
+                if shared > bl:
+                    best, bl = j, shared
+            if best >= 0:
+                big[best] = shapely.union_all([big[best], s])
+        out = []
+        for p in big:
+            out.extend(_compact_split(p, target_km2, depth + 1))
+        return out
+    return [g]
+
+
 def _split_oversized(z, max_km2, lines=None, cell_km2=None):
     """Split zones far above the reference p90 into explainable parts.
 
     Zones with internal OSM lines split along those lines.  Roadless rural
-    zones split into near-square blocks, which is the agreed fallback where
-    OSM has no linework to follow (never long strips).
+    zones split into compact near-square pieces (never a global grid, never
+    long strips), which is the agreed fallback where OSM has no linework.
     """
     if max_km2 <= 0 or not len(z):
         return z
@@ -2181,37 +2286,21 @@ def _split_oversized(z, max_km2, lines=None, cell_km2=None):
         g = r["geometry"]
         if ((has_kind and not r.get("kind") == "land")
                 or g is None or g.is_empty
-                or g.area / 1e6 <= max_km2 * 1.2):
+                or g.area / 1e6 <= max_km2 * 1.05):
             rows.append(r)
             continue
         cell_km2 = fallback_cell
-        if budget is not None:
+        if budget is not None and cell_km2 is None:
             rd = float(r.get("road_density") or 0.0)
             cell_km2 = _budget_mean(_budget_class(rd, budget), budget)
-        step = max(400.0, math.sqrt(max(float(cell_km2), 0.05)) * 1000.0)
-        minx, miny, maxx, maxy = g.bounds
-        pieces = []
-        x = minx
-        while x < maxx:
-            y = miny
-            while y < maxy:
-                cell = shapely.box(x, y, min(x + step, maxx),
-                                   min(y + step, maxy))
-                try:
-                    inter = g.intersection(cell)
-                except Exception:  # noqa: BLE001
-                    inter = None
-                if inter is not None:
-                    for p in shapely.get_parts(inter):
-                        if p.geom_type == "Polygon" and p.area > 1000.0:
-                            pieces.append(p)
-                y += step
-            x += step
+        elif cell_km2 is None:
+            cell_km2 = max(0.05, max_km2 / 2.0)
+        pieces = _compact_split(g, max(0.02, float(cell_km2)))
         if len(pieces) < 2:
             rows.append(r)
             continue
         pieces = _merge_small_faces(
-            pieces, max(0.02, step * step / 1e6 * 0.02))
+            pieces, max(0.02, float(cell_km2) * 0.02))
         for p in pieces:
             nr = r.copy()
             nr["geometry"] = p
@@ -2819,101 +2908,19 @@ def _split_class(z, mask, quota, cls, lines, budget):
                             crs=z.crs).reset_index(drop=True)
 
 
-def _enforce_zone_count(z, target, lines=None, work_area_km2=None,
-                        max_zone_km2=None, quotas=None, core_target=None):
-    """Bring a finished unit to its zone-count target.
+def _enforce_zone_count(z, target=None, lines=None, work_area_km2=None,
+                        max_zone_km2=None, quotas=None, core_target=None,
+                        class_shares=None):
+    """Finalize zones with per-tier area ranges only.
 
-    With reference quotas, each density class is first grown/shrunk to its
-    own count (core/urban/rural), which reproduces the reference scheme's
-    spatial allocation instead of a single global merge.  Without quotas,
-    the area-budget target is enforced globally.
+    Reference zone counts are not used as targets or caps; each density tier
+    has its own area min/max (area_budget.json).  The final count is emergent.
     """
-    if not target or not len(z):
-        return z
-    target = int(target)
-    budget = area_budget()
-    area = float(work_area_km2 or 0.0)
-    if not area:
-        try:
-            area = float(z.to_crs(z.estimate_utm_crs()).area.sum()) / 1e6
-        except Exception:  # noqa: BLE001
-            area = float(max(len(z), 1))
-    avg = max(0.05, area / target)
-    mx = float(max_zone_km2 or avg * 3.0)
-    if (max_zone_km2 is None and budget is not None
-            and "road_density" in z.columns):
-        # The last (remote) tier has no hard upper limit, but stays bounded:
-        # desert/plateau zones may reach ~2.5x the remote mean.
-        try:
-            rmin = float(budget.get("thresholds", {}).get("rural_min", 0.15))
-            rd = pd.to_numeric(z["road_density"], errors="coerce").fillna(0.0)
-            if float((rd < rmin).mean()) > 0.30:
-                mx = max(mx, _budget_mean("remote", budget) * 2.5)
-        except Exception:  # noqa: BLE001
-            pass
-    z = _split_oversized(z, mx, lines=lines, cell_km2=avg)
-    q3 = None
-    if quotas and budget is not None and "road_density" in z.columns:
-        q3 = {"core": int(quotas.get("core", 0)),
-              "urban": int(quotas.get("urban", 0))
-                       + int(quotas.get("town", 0)),
-              "rural": int(quotas.get("rural", 0))}
-        if sum(q3.values()) <= 0:
-            q3 = None
-    # Area/count tolerance: the standard scheme's boundaries are only ~60%
-    # visible in OSM, so forcing an exact zone count creates cuts that do
-    # not follow OSM.  Each class and the total may move by +/-12%; larger
-    # or smaller zones are preferred over non-OSM boundaries.
-    if q3 is not None:
-        for _ in range(2):
-            cls = _zone_classes(z, budget)
-            for c in ("rural", "urban", "core"):
-                if int((cls == c).sum()) < int(q3[c] * 0.88):
-                    z = _split_class(z, cls == c, q3[c], c, lines, budget)
-            cls = _zone_classes(z, budget)
-            for c in ("core", "urban", "rural"):
-                if int((cls == c).sum()) > int(q3[c] * 1.12):
-                    z = _cap_zone_count(z, int(q3[c] * 1.12), lines=lines,
-                                        max_ratio=1.0, only_mask=cls == c)
-            cls = _zone_classes(z, budget)
-            if all(int(q3[c] * 0.88) <= int((cls == c).sum())
-                   <= int(q3[c] * 1.12)
-                   for c in ("core", "urban", "rural")):
-                break
-        z = _cap_zone_count(z, target, lines=lines, max_ratio=1.12)
-    else:
-        z = _cap_zone_count(z, target, lines=lines, max_ratio=1.12)
-        if int(z.shape[0]) < int(target * 0.88):
-            # Grow only along OSM roads; never invent a grid to hit a count.
-            z = _split_to_target(z, target, lines=lines,
-                                 work_area_km2=work_area_km2)
-        z = _cap_zone_count(z, target, lines=lines, max_ratio=1.12)
-    # Merge-only strip cleanup: a whole cluster of side-by-side strips
-    # becomes one larger OSM-bounded zone; the remainder is absorbed into
-    # compact neighbours or blocks.  No grid re-cut is applied.
     try:
-        z = _repartition_strip_clusters(z)
-    except Exception as exc:  # noqa: BLE001
-        print(f"[strip-cluster] skipped: {exc}")
-    z = _merge_parallel_strips_post(z, target=target, floor_frac=0.85)
-    # General finalize: remove rings, densify core zones along OSM roads,
-    # fill closed-loop holes, repair overlaps and drop fragments.  This is
-    # part of the algorithm for every unit, not an offline special case.
-    try:
-        from .ring_fix import finalize_units as _fin
+        from .ring_fix import finalize_units
     except ImportError:
-        from commercial_zoning.ring_fix import finalize_units as _fin
-    z = _fin(z, lines=lines, target=target, core_target=core_target)
-    if int(z.shape[0]) > int(target * 1.12):
-        z = _cap_zone_count(z, target, lines=lines, max_ratio=1.12)
-    z["zone"] = np.arange(1, len(z) + 1)
-    if "kind" in z.columns:
-        print(f"[count-target] {len(z[z['kind'].eq('land')])} land / "
-              f"{len(z)} total zones (target {target})", flush=True)
-    else:
-        print(f"[count-target] {len(z)} zones (target {target})", flush=True)
-    return z
-
+        from commercial_zoning.ring_fix import finalize_units
+    return finalize_units(z, lines=lines, class_shares=class_shares)
 
 def generate_guangdong_aggregate(bbox, force=False, scope="province",
                                  admin_name=None, level=None, center=None,
@@ -2950,18 +2957,32 @@ def generate_guangdong_aggregate(bbox, force=False, scope="province",
     t0 = time.time()
     units = []
 
-    def _city_unit(cm):
-        # One fine process per city, with the count equal to the sum of its
-        # county reference counts.  This avoids relying on imperfect county
-        # polygons (e.g. island-only level-6 relations) while keeping the
-        # city total exact.
-        return {"name": cm["name"], "count": int(cm["count"]),
-                "bbox": cm["bbox"], "center": cm["center"],
-                "level": cm.get("level", "5")}
+    def _city_edge_units(cm):
+        # Every district/county is generated in its own administrative frame
+        # with a density-driven target and per-tier area ranges (no reference
+        # counts).  The county bbox comes from the reference aggregate only
+        # for the administrative extent, never for a zone count.
+        real = [n for n in cm.get("counties", [])
+                if n and n != cm["name"] and n != "市辖区"]
+        # OSM occasionally emits a sub-metre "boundary" with no reference
+        # area (波美村界线, a 120 m village outline).  It is not a county.
+        real = [n for n in real if not _tiny_admin_unit(
+            (tgt.get("counties", {}) or {}).get(n, {}))]
+        if len(real) <= 1:
+            return [{"name": cm["name"], "bbox": cm["bbox"],
+                     "center": cm["center"],
+                     "level": cm.get("level", "5")}]
+        out = []
+        for n in real:
+            ct = (tgt.get("counties", {}) or {}).get(n, {})
+            out.append({"name": n, "bbox": ct.get("bbox") or cm["bbox"],
+                        "center": ct.get("center") or cm["center"],
+                        "level": "6", "city": cm["name"]})
+        return out
 
     if scope == "province":
         for _ck, cm in tgt["cities"].items():
-            units.append(_city_unit(cm))
+            units.extend(_city_edge_units(cm))
     else:
         ck = _strip_admin(admin_name)
         cm = tgt["cities"].get(ck)
@@ -2969,7 +2990,7 @@ def generate_guangdong_aggregate(bbox, force=False, scope="province",
             return generate_admin_region(bbox, force=force, scope="city",
                                          admin_name=admin_name, level=level,
                                          center=center, progress=progress)
-        units.append(_city_unit(cm))
+        units.extend(_city_edge_units(cm))
     seen = set()
     units = [u for u in units if not (u["name"] in seen
                                       or seen.add(u["name"]))]
@@ -2980,15 +3001,20 @@ def generate_guangdong_aggregate(bbox, force=False, scope="province",
     failed = []
     for idx, u in enumerate(units):
         safe = "".join(c for c in u["name"] if c not in r'\/:*?"<>|')
-        up = unit_dir / (f"{safe}-{u['count']}-"
-                          f"{os.environ.get('XGB_SERVICE_VERSION', '1.1.0')}.geojson")
+        _city_key = _strip_admin(u.get("city", ""))
+        prefix = (f"{_city_key}__") if _city_key else ""
+        up = _cached_unit_file(u["name"])
+        if up is None:
+            up = unit_dir / (f"{prefix}{safe}-density-"
+                             f"{os.environ.get('XGB_SERVICE_VERSION', '1.1.0')}.geojson")
 
         def _prog(pct, stage, i=idx):
             _report(progress, 5 + (i + pct / 100.0) / n * 85.0,
                     f"{stage} ({i + 1}/{n})")
 
         try:
-            if up.exists() and not force:
+            loaded = up.exists() and not force
+            if loaded:
                 g = gpd.read_file(up)
                 _report(progress, 5 + (idx + 1) / n * 85.0,
                         f"加载 {u['name']} ({idx + 1}/{n})")
@@ -2999,23 +3025,19 @@ def generate_guangdong_aggregate(bbox, force=False, scope="province",
                     ",".join(str(x) for x in u["bbox"]), force=force,
                     scope="county", admin_name=u["name"],
                     level=u["level"], center=u["center"],
-                    progress=_prog, target_count=u["count"])
+                    progress=_prog)
                 g = gpd.read_file(res["geojson"])
-            # Structural cleanup before aggregation: whole strip clusters
-            # become larger OSM-bounded zones; the remainder is absorbed.
-            # Units that already went through the offline cleanup can skip
-            # this with XGB_AGG_STRIP=0 to keep their counts.
-            if os.environ.get("XGB_AGG_STRIP", "1") == "1":
+            # Structural cleanup applies only to freshly generated units;
+            # pre-generated county deliverables stay byte-for-byte as built.
+            if not loaded and os.environ.get("XGB_AGG_STRIP", "1") == "1":
                 try:
                     g = _repartition_strip_clusters(g, min_size=2)
                     g = _merge_parallel_strips_post(
-                        g, target=int(u["count"]), floor_frac=0.85)
+                        g, target=None, floor_frac=0.85)
                 except Exception as exc:  # noqa: BLE001
                     print(f"[agg] strip cleanup skipped for {u['name']}: {exc}")
-            # Per-city count control: the reference count is the sum of the
-            # city's county counts, so cap each city unit before merging.
-            g = _cap_zone_count(g, u["count"], max_ratio=1.0)
-            g.to_file(up, driver="GeoJSON")
+            if not loaded:
+                g.to_file(up, driver="GeoJSON")
             frames.append(g)
         except Exception as exc:  # noqa: BLE001
             failed.append({"unit": u["name"], "error": repr(exc)})
@@ -3028,8 +3050,7 @@ def generate_guangdong_aggregate(bbox, force=False, scope="province",
     del frames
     z["geometry"] = z.geometry.map(_poly)
     z = z[z.geometry.notna() & ~z.geometry.is_empty].reset_index(drop=True)
-    unit_target = int(sum(u["count"] for u in units))
-    z = _cap_zone_count(z, unit_target, max_ratio=1.02)
+    unit_target = len(z)
     try:
         from .quality import repair_overlaps_zones
     except ImportError:
@@ -3039,6 +3060,28 @@ def generate_guangdong_aggregate(bbox, force=False, scope="province",
         z = z[z.geometry.notna() & ~z.geometry.is_empty].reset_index(drop=True)
     except Exception as exc:  # noqa: BLE001
         print(f"[agg] overlap repair skipped: {exc}")
+    try:
+        from .ring_fix import (enforce_area_ranges, repartition_rings,
+                               fill_empty_rings)
+    except ImportError:
+        from commercial_zoning.ring_fix import (enforce_area_ranges,
+                                                repartition_rings,
+                                                fill_empty_rings)
+    try:
+        _m = z.to_crs(z.estimate_utm_crs()).reset_index(drop=True)
+        # Counties are already finalized inside their own frames; re-running
+        # the merge/reclassify pass over the union would cut county seams
+        # with roadless bisections.  Only catch zones grown past the class
+        # max by seam repair, keeping the stored density_class labels.
+        _m = enforce_area_ranges(_m, split_only=True)
+        _m, _ng = repartition_rings(_m)
+        _m = fill_empty_rings(_m)
+        # A repartition can expose a second ring group at a county seam.
+        _m, _ng2 = repartition_rings(_m)
+        _m = fill_empty_rings(_m)
+        z = _m.to_crs(4326).reset_index(drop=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[agg] ring fix skipped: {exc}")
     z["geometry"] = z.geometry.map(_poly)
     z = z[z.geometry.notna() & ~z.geometry.is_empty].reset_index(drop=True)
     z["zone"] = np.arange(1, len(z) + 1)
@@ -3072,7 +3115,7 @@ def generate_guangdong_aggregate(bbox, force=False, scope="province",
                                   driver="GeoJSON")
     except Exception as exc:  # noqa: BLE001
         print(f"[agg] display simplify skipped: {exc}")
-    target = unit_target
+    target = len(z)
     meta = {
         "bbox": list(b),
         "area_km2": round(float(z["area_km2"].sum())
@@ -3097,14 +3140,28 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
                     target_count=None, quick=False):
     _report(progress, 2, "准备区域")
     _ref = _target_meta(admin_name) if admin_name else None
-    # Quick preview: township polygons + major-road cuts, no fine road/block
-    # pipeline and no density-count enforcement.  A whole prefecture comes
-    # back in a few minutes instead of ~40, which is what the map UI needs.
-    if scope in ("city", "county") and quick:
-        return generate_admin_region(bbox, force=force, scope=scope,
-                                     admin_name=admin_name, level=level,
-                                     center=center, progress=progress,
-                                     quick=True)
+    if scope == "county" and admin_name and not force and not quick:
+        up = _cached_unit_file(admin_name)
+        if up is not None:
+            try:
+                zu = gpd.read_file(up)
+                land = (zu[zu["kind"].eq("land")]
+                        if "kind" in zu.columns else zu)
+                zmeta = {"zones": len(zu), "cached": True, "engine": "road",
+                         "bbox": _bbox(bbox, scope=scope)}
+                try:
+                    from .quality import _bad, metrics, zone_scores
+                    mm = metrics(land)
+                    zmeta["quality_score"] = round(
+                        float(zone_scores(mm).mean()), 1)
+                    zmeta["bad_zones"] = int(_bad(mm).sum())
+                except Exception:  # noqa: BLE001
+                    pass
+                _report(progress, 100, "缓存命中")
+                return {"key": up.stem, "zones": len(zu), "cached": True,
+                        "geojson": str(up), "meta": zmeta}
+            except Exception as exc:  # noqa: BLE001
+                print(f"[cache] unit load skipped: {exc}")
     if scope == "province" and _ref and _ref.get("kind") == "province":
         return generate_guangdong_aggregate(
             bbox, force=force, scope="province", admin_name=admin_name,
@@ -3118,8 +3175,7 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
                                      admin_name=admin_name, level=level,
                                      center=center, progress=progress,
                                      quick=quick)
-    ref_target = int(target_count) if target_count else (
-        int(_ref["count"]) if _ref and _ref.get("count") else None)
+    ref_target = None  # counts are never reference-driven; area ranges only
     county_frame = None
     if scope == "county":
         # Small counties keep the supervised fine path (much higher IoU
@@ -3134,7 +3190,7 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
         except Exception as exc:  # noqa: BLE001
             print(f"[frame] county polygon unavailable: {exc}")
         ref_area = float((_ref or {}).get("area_km2") or 0.0)
-        if county_frame is not None and ref_target:
+        if county_frame is not None and _ref:
             mask = _land_mask()
             if mask is not None:
                 try:
@@ -3156,7 +3212,7 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
                  else _area_km2(bc))
         print(f"[route] county {admin_name or ''} polygon {carea:.0f} km2")
         _report(progress, 5, "解析行政区边界")
-        if carea > MAX_AREA_KM2 and not ref_target:
+        if carea > 40000.0:
             return generate_admin_region(bbox, force=force, scope=scope,
                                          admin_name=admin_name, level=level,
                                          center=center, progress=progress)
@@ -3165,6 +3221,10 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
                                      admin_name=admin_name, level=level,
                                      center=center, progress=progress)
     b = _limit_bbox_to_local(_bbox(bbox, city=city_mode, scope=scope))
+    if county_frame is not None:
+        fb = county_frame.bounds
+        b = (max(b[0], fb[0]), max(b[1], fb[1]),
+             min(b[2], fb[2]), min(b[3], fb[3]))
     area = _area_km2(b)
     work_area = area
     if scope == "county" and county_frame is not None:
@@ -3172,9 +3232,9 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
         # county polygon (Nanshan: bbox 1,450 km2, polygon 619 km2).
         work_area = _geom_area_km2(county_frame) or area
     limit = MAX_AREA_CITY_KM2 if city_mode else MAX_AREA_KM2
-    if ref_target:
-        # Reference-targeted county units may be large (e.g. 英德 ~5,600 km2);
-        # keep them on the fine path so the target count is honoured.
+    if scope == "county":
+        # Large counties (英德 ~5,700 km2) stay on the fine path: the whole
+        # county must be well zoned, not collapsed into the admin fallback.
         limit = max(limit, 20000.0)
     if work_area > limit:
         raise ValueError(
@@ -3218,30 +3278,22 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
         build_lines(b, lines_path)
     _report(progress, 28, "准备切分")
     model, feats = _model()
-    if ref_target:
-        target = max(24, min(4000, int(ref_target)))
-    else:
-        target = None
-        try:
-            target = _density_target(b, lines_path, frame=mask_frame,
-                                     scope=scope, city_mode=city_mode)
-        except Exception as exc:  # noqa: BLE001
-            print(f"[budget] density target skipped: {exc}")
-        if not target:
-            target = _auto_target(work_area, scope=scope,
-                                  city_mode=city_mode)
+    target = None
+    try:
+        target = _density_target(b, lines_path, frame=mask_frame,
+                                 scope=scope, city_mode=city_mode)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[budget] density target skipped: {exc}")
+    if not target:
+        target = _auto_target(work_area, scope=scope, city_mode=city_mode)
     _min_block = None
-    if ref_target or city_mode or scope in ("city", "county"):
+    if target and (city_mode or scope in ("city", "county")):
         # Keep the initial candidate count roughly 1.5-10x the final count:
         # merge sub-faces smaller than about one sixth of the reference mean
         # area before the XGB pair stage.
         avg_m2 = (work_area / max(target, 1)) * 1e6
         _min_block = int(max(20000, min(2000000, avg_m2 / 8.0)))
-    _cut = os.environ.get("XGB_CUT")
-    if not _cut:
-        _cut = ("all_local" if ref_target
-                else "major_minor" if city_mode
-                else "all_local" if area <= 20 else "long_local")
+    _cut = os.environ.get("XGB_CUT", "tiered")
     env = os.environ.copy()
     env.update({
         "XGB_PBF": pbf,
@@ -3255,7 +3307,7 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
         "XGB_QUALITY_VORONOI": os.environ.get("XGB_QUALITY_VORONOI", "0"),
         "XGB_CUT": _cut,
         "XGB_TARGET": str(target),
-        "XGB_REF_TARGET": str(ref_target or ""),
+        "XGB_REF_TARGET": "",
         "XGB_LOCAL_TARGET": ("0" if (city_mode or ref_target) else
                              os.environ.get("XGB_LOCAL_TARGET", "1")),
         "XGB_MIN_P": os.environ.get("XGB_MIN_P", "0.15" if city_mode else "0.25"),
@@ -3372,7 +3424,17 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
         # pipeline's road/merge cleanup; the extra per-zone quality passes are
         # quadratic at this scale and are skipped.
         _fast_q = (os.environ.get("XGB_FAST_QUALITY") == "1"
-                   and ref_target and work_area > 200)
+                   and work_area > 200)
+        # Bind the module-level helpers explicitly: assigning them inside
+        # the conditional below otherwise makes them unbound locals when the
+        # fast path is off.
+        _attach_micro = globals()["_attach_micro"]
+        _merge_bad_zones = globals()["_merge_bad_zones"]
+        _redistribute_ribbons = globals()["_redistribute_ribbons"]
+        _merge_parallel_strips = globals()["_merge_parallel_strips"]
+        _split_elongated_zones = globals()["_split_elongated_zones"]
+        _fill_holes_and_enclaves = globals()["_fill_holes_and_enclaves"]
+        _explode_multipolygons = globals()["_explode_multipolygons"]
 
         def _noop_quality(_z, *a, **k):
             return _z
@@ -3670,27 +3732,13 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
             print(f"[final-ribbon] skipped: {_fr2exc}")
         if target and (ref_target or city_mode
                        or scope in ("city", "county")):
-            _maxz = None
-            _quotas = None
-            if ref_target:
-                try:
-                    _p = (_ref or {}).get("area_p10_p50_p90")
-                    if _p and len(_p) >= 3:
-                        _maxz = max(2.0, float(_p[2]) * 1.8)
-                    _quotas = (_ref or {}).get("class_counts")
-                except Exception:  # noqa: BLE001
-                    _maxz = _quotas = None
             try:
-                _core_target = ((_quotas or {}).get("core")
-                                if _quotas else None)
-                if _core_target is None:
-                    _core_target = _LAST_DENSITY_QUOTAS.get("core")
-                z = _enforce_zone_count(
-                    z, target, lines=lines_gdf,
-                    work_area_km2=work_area, max_zone_km2=_maxz,
-                    quotas=_quotas, core_target=_core_target)
+                z = _enforce_zone_count(z, target, lines=lines_gdf,
+                                        work_area_km2=work_area,
+                                        class_shares=_class_area_shares(
+                                            admin_name))
             except Exception as _ctexc:  # noqa: BLE001
-                print(f"[count-target] skipped: {_ctexc}")
+                print(f"[area-target] skipped: {_ctexc}")
         # The pipeline computed the attribute card before quality splitting
         # and merging; splits duplicated the parent's area/pp onto every
         # shard and merges left the host's old values.  Refresh the two pure
@@ -3787,6 +3835,11 @@ def load_geojson(key):
     p = d / "xgb_zones_display.geojson"
     if not p.exists():
         p = d / "xgb_zones.geojson"
+    if not p.exists():
+        # Pre-generated county/direct-city unit returned by the fast path.
+        q = CACHE / "agg_units" / f"{key}.geojson"
+        if q.exists():
+            p = q
     if not p.exists():
         raise FileNotFoundError(key)
     import json as _json

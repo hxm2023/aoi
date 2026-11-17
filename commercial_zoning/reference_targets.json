@@ -17,6 +17,12 @@
     "town": 120,
     "rural": 81
    },
+   "class_area_share": {
+    "core": 0.4206,
+    "urban": 0.2771,
+    "town": 0.1372,
+    "rural": 0.1651
+   },
    "counties": [],
    "bbox": [
     113.51589,
@@ -48,6 +54,12 @@
     "town": 19,
     "rural": 139
    },
+   "class_area_share": {
+    "core": 0.2301,
+    "urban": 0.1595,
+    "town": 0.0227,
+    "rural": 0.5877
+   },
    "counties": [],
    "bbox": [
     113.15153,
@@ -78,6 +90,12 @@
     "urban": 30,
     "town": 26,
     "rural": 367
+   },
+   "class_area_share": {
+    "core": 0.0072,
+    "urban": 0.0155,
+    "town": 0.0133,
+    "rural": 0.964
    },
    "counties": [
     "云城区",
@@ -120,6 +138,12 @@
     "town": 289,
     "rural": 94
    },
+   "class_area_share": {
+    "core": 0.2638,
+    "urban": 0.1405,
+    "town": 0.3071,
+    "rural": 0.2885
+   },
    "counties": [
     "三水区",
     "南海区",
@@ -160,6 +184,12 @@
     "urban": 0,
     "town": 139,
     "rural": 405
+   },
+   "class_area_share": {
+    "core": 0.275,
+    "urban": 0.0,
+    "town": 0.0679,
+    "rural": 0.6571
    },
    "counties": [
     "从化区",
@@ -214,6 +244,12 @@
     "town": 63,
     "rural": 456
    },
+   "class_area_share": {
+    "core": 0.0266,
+    "urban": 0.0348,
+    "town": 0.0198,
+    "rural": 0.9189
+   },
    "counties": [
     "博罗县",
     "惠东县",
@@ -255,6 +291,12 @@
     "town": 55,
     "rural": 413
    },
+   "class_area_share": {
+    "core": 0.0321,
+    "urban": 0.0326,
+    "town": 0.0456,
+    "rural": 0.8897
+   },
    "counties": [
     "惠来县",
     "揭东区",
@@ -295,6 +337,12 @@
     "urban": 34,
     "town": 39,
     "rural": 660
+   },
+   "class_area_share": {
+    "core": 0.0053,
+    "urban": 0.0056,
+    "town": 0.0119,
+    "rural": 0.9772
    },
    "counties": [
     "丰顺县",
@@ -343,6 +391,12 @@
     "town": 34,
     "rural": 173
    },
+   "class_area_share": {
+    "core": 0.1411,
+    "urban": 0.0951,
+    "town": 0.0728,
+    "rural": 0.691
+   },
    "counties": [
     "南澳县",
     "波美村界线",
@@ -390,6 +444,12 @@
     "town": 82,
     "rural": 300
    },
+   "class_area_share": {
+    "core": 0.0165,
+    "urban": 0.0196,
+    "town": 0.0274,
+    "rural": 0.9365
+   },
    "counties": [
     "城区",
     "海丰县",
@@ -428,6 +488,12 @@
     "urban": 49,
     "town": 65,
     "rural": 365
+   },
+   "class_area_share": {
+    "core": 0.0358,
+    "urban": 0.0163,
+    "town": 0.0362,
+    "rural": 0.9117
    },
    "counties": [
     "台山市",
@@ -474,6 +540,12 @@
     "town": 25,
     "rural": 489
    },
+   "class_area_share": {
+    "core": 0.0086,
+    "urban": 0.0081,
+    "town": 0.0043,
+    "rural": 0.979
+   },
    "counties": [
     "东源县",
     "和平县",
@@ -516,6 +588,12 @@
     "urban": 2,
     "town": 42,
     "rural": 43
+   },
+   "class_area_share": {
+    "core": 0.8022,
+    "urban": 0.0012,
+    "town": 0.0162,
+    "rural": 0.1804
    },
    "counties": [
     "光明区",
@@ -568,6 +646,12 @@
     "town": 67,
     "rural": 583
    },
+   "class_area_share": {
+    "core": 0.0109,
+    "urban": 0.0034,
+    "town": 0.017,
+    "rural": 0.9686
+   },
    "counties": [
     "佛冈县",
     "清城区",
@@ -614,6 +698,12 @@
     "urban": 50,
     "town": 28,
     "rural": 697
+   },
+   "class_area_share": {
+    "core": 0.0133,
+    "urban": 0.0132,
+    "town": 0.0079,
+    "rural": 0.9656
    },
    "counties": [
     "吴川市",
@@ -664,6 +754,12 @@
     "town": 90,
     "rural": 249
    },
+   "class_area_share": {
+    "core": 0.0437,
+    "urban": 0.0232,
+    "town": 0.0728,
+    "rural": 0.8604
+   },
    "counties": [
     "湘桥区",
     "潮安区",
@@ -701,6 +797,12 @@
     "town": 15,
     "rural": 189
    },
+   "class_area_share": {
+    "core": 0.1403,
+    "urban": 0.0997,
+    "town": 0.0131,
+    "rural": 0.7469
+   },
    "counties": [
     "斗门区",
     "金湾区",
@@ -737,6 +839,12 @@
     "urban": 39,
     "town": 25,
     "rural": 445
+   },
+   "class_area_share": {
+    "core": 0.0148,
+    "urban": 0.0051,
+    "town": 0.0061,
+    "rural": 0.974
    },
    "counties": [
     "四会市",
@@ -785,6 +893,12 @@
     "town": 55,
     "rural": 706
    },
+   "class_area_share": {
+    "core": 0.0058,
+    "urban": 0.0126,
+    "town": 0.0076,
+    "rural": 0.974
+   },
    "counties": [
     "信宜市",
     "化州市",
@@ -826,6 +940,12 @@
     "town": 37,
     "rural": 255
    },
+   "class_area_share": {
+    "core": 0.0167,
+    "urban": 0.01,
+    "town": 0.017,
+    "rural": 0.9562
+   },
    "counties": [
     "江城区",
     "阳东区",
@@ -864,6 +984,12 @@
     "urban": 46,
     "town": 10,
     "rural": 624
+   },
+   "class_area_share": {
+    "core": 0.0049,
+    "urban": 0.0057,
+    "town": 0.0018,
+    "rural": 0.9876
    },
    "counties": [
     "乐昌市",
@@ -918,6 +1044,12 @@
     "town": 43,
     "rural": 38
    },
+   "class_area_share": {
+    "core": 0.0909,
+    "urban": 0.1147,
+    "town": 0.2214,
+    "rural": 0.573
+   },
    "bbox": [
     112.75929,
     22.95876,
@@ -944,6 +1076,12 @@
     "urban": 17,
     "town": 5,
     "rural": 120
+   },
+   "class_area_share": {
+    "core": 0.002,
+    "urban": 0.0063,
+    "town": 0.0082,
+    "rural": 0.9835
    },
    "bbox": [
     114.32199,
@@ -972,6 +1110,12 @@
     "town": 2,
     "rural": 100
    },
+   "class_area_share": {
+    "core": 0.002,
+    "urban": 0.0014,
+    "town": 0.0112,
+    "rural": 0.9854
+   },
    "bbox": [
     115.84578,
     23.61706,
@@ -998,6 +1142,12 @@
     "urban": 3,
     "town": 0,
     "rural": 37
+   },
+   "class_area_share": {
+    "core": 0.003,
+    "urban": 0.0019,
+    "town": 0.0,
+    "rural": 0.9952
    },
    "bbox": [
     112.84663,
@@ -1026,6 +1176,12 @@
     "town": 3,
     "rural": 23
    },
+   "class_area_share": {
+    "core": 0.0008,
+    "urban": 0.0021,
+    "town": 0.0025,
+    "rural": 0.9945
+   },
    "bbox": [
     112.87798,
     24.46935,
@@ -1052,6 +1208,12 @@
     "urban": 11,
     "town": 6,
     "rural": 39
+   },
+   "class_area_share": {
+    "core": 0.035,
+    "urban": 0.0361,
+    "town": 0.0337,
+    "rural": 0.8951
    },
    "bbox": [
     111.9539,
@@ -1080,6 +1242,12 @@
     "town": 3,
     "rural": 60
    },
+   "class_area_share": {
+    "core": 0.0021,
+    "urban": 0.0196,
+    "town": 0.0149,
+    "rural": 0.9634
+   },
    "bbox": [
     111.72462,
     22.57219,
@@ -1106,6 +1274,12 @@
     "urban": 5,
     "town": 16,
     "rural": 125
+   },
+   "class_area_share": {
+    "core": 0.0025,
+    "urban": 0.0047,
+    "town": 0.0259,
+    "rural": 0.9669
    },
    "bbox": [
     115.3116,
@@ -1134,6 +1308,12 @@
     "town": 0,
     "rural": 122
    },
+   "class_area_share": {
+    "core": 0.0011,
+    "urban": 0.0018,
+    "town": 0.0,
+    "rural": 0.9971
+   },
    "bbox": [
     113.50752,
     24.82043,
@@ -1160,6 +1340,12 @@
     "urban": 0,
     "town": 35,
     "rural": 111
+   },
+   "class_area_share": {
+    "core": 0.0183,
+    "urban": 0.0,
+    "town": 0.0519,
+    "rural": 0.9299
    },
    "bbox": [
     113.27618,
@@ -1188,6 +1374,12 @@
     "town": 8,
     "rural": 52
    },
+   "class_area_share": {
+    "core": 0.0038,
+    "urban": 0.0092,
+    "town": 0.0186,
+    "rural": 0.9684
+   },
    "bbox": [
     113.2938,
     23.66584,
@@ -1214,6 +1406,12 @@
     "urban": 7,
     "town": 6,
     "rural": 188
+   },
+   "class_area_share": {
+    "core": 0.0029,
+    "urban": 0.0036,
+    "town": 0.0024,
+    "rural": 0.9911
    },
    "bbox": [
     110.67824,
@@ -1242,6 +1440,12 @@
     "town": 3,
     "rural": 0
    },
+   "class_area_share": {
+    "core": 0.9815,
+    "urban": 0.0,
+    "town": 0.0185,
+    "rural": 0.0
+   },
    "bbox": [
     113.85399,
     22.68849,
@@ -1268,6 +1472,12 @@
     "urban": 5,
     "town": 0,
     "rural": 103
+   },
+   "class_area_share": {
+    "core": 0.0034,
+    "urban": 0.0098,
+    "town": 0.0,
+    "rural": 0.9867
    },
    "bbox": [
     115.47896,
@@ -1296,6 +1506,12 @@
     "town": 9,
     "rural": 120
    },
+   "class_area_share": {
+    "core": 0.0053,
+    "urban": 0.0073,
+    "town": 0.0051,
+    "rural": 0.9824
+   },
    "bbox": [
     110.32106,
     21.44962,
@@ -1322,6 +1538,12 @@
     "urban": 0,
     "town": 3,
     "rural": 1
+   },
+   "class_area_share": {
+    "core": 0.9576,
+    "urban": 0.0,
+    "town": 0.0136,
+    "rural": 0.0288
    },
    "bbox": [
     113.69923,
@@ -1350,6 +1572,12 @@
     "town": 2,
     "rural": 72
    },
+   "class_area_share": {
+    "core": 0.2619,
+    "urban": 0.0,
+    "town": 0.016,
+    "rural": 0.7222
+   },
    "bbox": [
     113.29095,
     22.5608,
@@ -1376,6 +1604,12 @@
     "urban": 91,
     "town": 114,
     "rural": 3
+   },
+   "class_area_share": {
+    "core": 0.3625,
+    "urban": 0.2159,
+    "town": 0.4141,
+    "rural": 0.0075
    },
    "bbox": [
     112.83311,
@@ -1404,6 +1638,12 @@
     "town": 0,
     "rural": 7
    },
+   "class_area_share": {
+    "core": 0.0538,
+    "urban": 0.0,
+    "town": 0.0,
+    "rural": 0.9462
+   },
    "bbox": [
     116.89779,
     22.96496,
@@ -1430,6 +1670,12 @@
     "urban": 3,
     "town": 0,
     "rural": 73
+   },
+   "class_area_share": {
+    "core": 0.0018,
+    "urban": 0.0022,
+    "town": 0.0,
+    "rural": 0.9959
    },
    "bbox": [
     113.9254,
@@ -1458,6 +1704,12 @@
     "town": 9,
     "rural": 127
    },
+   "class_area_share": {
+    "core": 0.0041,
+    "urban": 0.0372,
+    "town": 0.0218,
+    "rural": 0.9368
+   },
    "bbox": [
     113.83922,
     23.05034,
@@ -1484,6 +1736,12 @@
     "urban": 8,
     "town": 15,
     "rural": 81
+   },
+   "class_area_share": {
+    "core": 0.0042,
+    "urban": 0.0066,
+    "town": 0.0286,
+    "rural": 0.9605
    },
    "bbox": [
     112.29847,
@@ -1512,6 +1770,12 @@
     "town": 2,
     "rural": 57
    },
+   "class_area_share": {
+    "core": 0.0136,
+    "urban": 0.0158,
+    "town": 0.0026,
+    "rural": 0.968
+   },
    "bbox": [
     110.47738,
     20.21246,
@@ -1538,6 +1802,12 @@
     "urban": 9,
     "town": 4,
     "rural": 84
+   },
+   "class_area_share": {
+    "core": 0.0033,
+    "urban": 0.0047,
+    "town": 0.0022,
+    "rural": 0.9898
    },
    "bbox": [
     114.68733,
@@ -1566,6 +1836,12 @@
     "town": 6,
     "rural": 69
    },
+   "class_area_share": {
+    "core": 0.0306,
+    "urban": 0.0299,
+    "town": 0.0181,
+    "rural": 0.9214
+   },
    "bbox": [
     112.42311,
     23.20307,
@@ -1592,6 +1868,12 @@
     "urban": 0,
     "town": 3,
     "rural": 36
+   },
+   "class_area_share": {
+    "core": 0.0219,
+    "urban": 0.0,
+    "town": 0.0181,
+    "rural": 0.96
    },
    "bbox": [
     110.38268,
@@ -1620,6 +1902,12 @@
     "town": 0,
     "rural": 0
    },
+   "class_area_share": {
+    "core": 1.0,
+    "urban": 0.0,
+    "town": 0.0,
+    "rural": 0.0
+   },
    "bbox": [
     114.26254,
     22.62495,
@@ -1646,6 +1934,12 @@
     "urban": 4,
     "town": 16,
     "rural": 43
+   },
+   "class_area_share": {
+    "core": 0.0792,
+    "urban": 0.0229,
+    "town": 0.054,
+    "rural": 0.844
    },
    "bbox": [
     115.20959,
@@ -1674,6 +1968,12 @@
     "town": 34,
     "rural": 54
    },
+   "class_area_share": {
+    "core": 0.1057,
+    "urban": 0.0,
+    "town": 0.1335,
+    "rural": 0.7609
+   },
    "bbox": [
     113.54166,
     23.08704,
@@ -1700,6 +2000,12 @@
     "urban": 0,
     "town": 6,
     "rural": 81
+   },
+   "class_area_share": {
+    "core": 0.0024,
+    "urban": 0.0,
+    "town": 0.007,
+    "rural": 0.9906
    },
    "bbox": [
     116.30909,
@@ -1728,6 +2034,12 @@
     "town": 0,
     "rural": 1
    },
+   "class_area_share": {
+    "core": 0.9541,
+    "urban": 0.0,
+    "town": 0.0,
+    "rural": 0.0459
+   },
    "bbox": [
     113.2941,
     23.10039,
@@ -1754,6 +2066,12 @@
     "urban": 3,
     "town": 4,
     "rural": 89
+   },
+   "class_area_share": {
+    "core": 0.0015,
+    "urban": 0.0023,
+    "town": 0.0061,
+    "rural": 0.99
    },
    "bbox": [
     113.87597,
@@ -1782,6 +2100,12 @@
     "town": 4,
     "rural": 0
    },
+   "class_area_share": {
+    "core": 0.9872,
+    "urban": 0.0,
+    "town": 0.0128,
+    "rural": 0.0
+   },
    "bbox": [
     113.68052,
     22.52049,
@@ -1808,6 +2132,12 @@
     "urban": 1,
     "town": 0,
     "rural": 64
+   },
+   "class_area_share": {
+    "core": 0.0036,
+    "urban": 0.0008,
+    "town": 0.0,
+    "rural": 0.9956
    },
    "bbox": [
     111.35681,
@@ -1836,6 +2166,12 @@
     "town": 3,
     "rural": 54
    },
+   "class_area_share": {
+    "core": 0.0021,
+    "urban": 0.0048,
+    "town": 0.0152,
+    "rural": 0.978
+   },
    "bbox": [
     115.7307,
     24.40305,
@@ -1862,6 +2198,12 @@
     "urban": 3,
     "town": 0,
     "rural": 62
+   },
+   "class_area_share": {
+    "core": 0.0012,
+    "urban": 0.001,
+    "town": 0.0,
+    "rural": 0.9978
    },
    "bbox": [
     112.05775,
@@ -1890,6 +2232,12 @@
     "town": 9,
     "rural": 147
    },
+   "class_area_share": {
+    "core": 0.004,
+    "urban": 0.0081,
+    "town": 0.0112,
+    "rural": 0.9767
+   },
    "bbox": [
     109.73874,
     21.40469,
@@ -1916,6 +2264,12 @@
     "urban": 8,
     "town": 13,
     "rural": 56
+   },
+   "class_area_share": {
+    "core": 0.0194,
+    "urban": 0.0221,
+    "town": 0.0463,
+    "rural": 0.9122
    },
    "bbox": [
     112.23036,
@@ -1944,6 +2298,12 @@
     "town": 4,
     "rural": 128
    },
+   "class_area_share": {
+    "core": 0.0043,
+    "urban": 0.0109,
+    "town": 0.0101,
+    "rural": 0.9747
+   },
    "bbox": [
     109.40486,
     20.11981,
@@ -1970,6 +2330,12 @@
     "urban": 2,
     "town": 0,
     "rural": 34
+   },
+   "class_area_share": {
+    "core": 0.0031,
+    "urban": 0.0065,
+    "town": 0.0,
+    "rural": 0.9904
    },
    "bbox": [
     111.52865,
@@ -1998,6 +2364,12 @@
     "town": 0,
     "rural": 78
    },
+   "class_area_share": {
+    "core": 0.0017,
+    "urban": 0.0034,
+    "town": 0.0,
+    "rural": 0.9949
+   },
    "bbox": [
     111.86625,
     23.45891,
@@ -2024,6 +2396,12 @@
     "urban": 7,
     "town": 5,
     "rural": 80
+   },
+   "class_area_share": {
+    "core": 0.0044,
+    "urban": 0.0176,
+    "town": 0.0115,
+    "rural": 0.9665
    },
    "bbox": [
     111.99832,
@@ -2052,6 +2430,12 @@
     "town": 7,
     "rural": 119
    },
+   "class_area_share": {
+    "core": 0.0099,
+    "urban": 0.0141,
+    "town": 0.0058,
+    "rural": 0.9701
+   },
    "bbox": [
     114.55395,
     21.96881,
@@ -2078,6 +2462,12 @@
     "urban": 26,
     "town": 22,
     "rural": 71
+   },
+   "class_area_share": {
+    "core": 0.1081,
+    "urban": 0.0394,
+    "town": 0.0384,
+    "rural": 0.8141
    },
    "bbox": [
     114.11896,
@@ -2106,6 +2496,12 @@
     "town": 7,
     "rural": 115
    },
+   "class_area_share": {
+    "core": 0.0063,
+    "urban": 0.007,
+    "town": 0.0206,
+    "rural": 0.9661
+   },
    "bbox": [
     115.91634,
     22.66286,
@@ -2132,6 +2528,12 @@
     "urban": 86,
     "town": 21,
     "rural": 57
+   },
+   "class_area_share": {
+    "core": 0.0748,
+    "urban": 0.1416,
+    "town": 0.0614,
+    "rural": 0.7222
    },
    "bbox": [
     114.22423,
@@ -2160,6 +2562,12 @@
     "town": 14,
     "rural": 64
    },
+   "class_area_share": {
+    "core": 0.0537,
+    "urban": 0.0354,
+    "town": 0.0919,
+    "rural": 0.819
+   },
    "bbox": [
     116.09377,
     23.51386,
@@ -2186,6 +2594,12 @@
     "urban": 4,
     "town": 14,
     "rural": 83
+   },
+   "class_area_share": {
+    "core": 0.0041,
+    "urban": 0.0042,
+    "town": 0.0383,
+    "rural": 0.9534
    },
    "bbox": [
     115.60199,
@@ -2214,6 +2628,12 @@
     "town": 4,
     "rural": 72
    },
+   "class_area_share": {
+    "core": 0.0794,
+    "urban": 0.0402,
+    "town": 0.017,
+    "rural": 0.8633
+   },
    "bbox": [
     113.07495,
     22.08251,
@@ -2240,6 +2660,12 @@
     "urban": 4,
     "town": 0,
     "rural": 84
+   },
+   "class_area_share": {
+    "core": 0.0005,
+    "urban": 0.0031,
+    "town": 0.0,
+    "rural": 0.9964
    },
    "bbox": [
     113.71339,
@@ -2268,6 +2694,12 @@
     "town": 21,
     "rural": 58
    },
+   "class_area_share": {
+    "core": 0.0489,
+    "urban": 0.013,
+    "town": 0.0542,
+    "rural": 0.8839
+   },
    "bbox": [
     112.79041,
     22.08532,
@@ -2294,6 +2726,12 @@
     "urban": 5,
     "town": 3,
     "rural": 71
+   },
+   "class_area_share": {
+    "core": 0.0023,
+    "urban": 0.028,
+    "town": 0.0253,
+    "rural": 0.9444
    },
    "bbox": [
     111.96076,
@@ -2322,6 +2760,12 @@
     "town": 17,
     "rural": 133
    },
+   "class_area_share": {
+    "core": 0.0273,
+    "urban": 0.0382,
+    "town": 0.0495,
+    "rural": 0.885
+   },
    "bbox": [
     115.72069,
     23.09875,
@@ -2348,6 +2792,12 @@
     "urban": 9,
     "town": 2,
     "rural": 73
+   },
+   "class_area_share": {
+    "core": 0.0035,
+    "urban": 0.015,
+    "town": 0.0091,
+    "rural": 0.9724
    },
    "bbox": [
     113.20138,
@@ -2376,6 +2826,12 @@
     "town": 12,
     "rural": 123
    },
+   "class_area_share": {
+    "core": 0.0072,
+    "urban": 0.0023,
+    "town": 0.015,
+    "rural": 0.9756
+   },
    "bbox": [
     115.77762,
     23.91374,
@@ -2402,6 +2858,12 @@
     "urban": 10,
     "town": 0,
     "rural": 34
+   },
+   "class_area_share": {
+    "core": 0.0621,
+    "urban": 0.0443,
+    "town": 0.0,
+    "rural": 0.8935
    },
    "bbox": [
     115.98984,
@@ -2430,6 +2892,12 @@
     "town": 3,
     "rural": 18
    },
+   "class_area_share": {
+    "core": 0.2238,
+    "urban": 0.2154,
+    "town": 0.0512,
+    "rural": 0.5096
+   },
    "bbox": [
     116.27205,
     23.38078,
@@ -2456,6 +2924,12 @@
     "urban": 4,
     "town": 1,
     "rural": 32
+   },
+   "class_area_share": {
+    "core": 0.0563,
+    "urban": 0.0253,
+    "town": 0.0003,
+    "rural": 0.9181
    },
    "bbox": [
     113.12144,
@@ -2484,6 +2958,12 @@
     "town": 11,
     "rural": 31
    },
+   "class_area_share": {
+    "core": 0.1001,
+    "urban": 0.034,
+    "town": 0.0898,
+    "rural": 0.7762
+   },
    "bbox": [
     111.71271,
     20.34151,
@@ -2510,6 +2990,12 @@
     "urban": 2,
     "town": 1,
     "rural": 7
+   },
+   "class_area_share": {
+    "core": 0.536,
+    "urban": 0.0403,
+    "town": 0.0151,
+    "rural": 0.4085
    },
    "bbox": [
     113.06436,
@@ -2538,6 +3024,7 @@
     "town": 0,
     "rural": 0
    },
+   "class_area_share": null,
    "bbox": [
     116.49152,
     23.39447,
@@ -2564,6 +3051,12 @@
     "urban": 8,
     "town": 0,
     "rural": 28
+   },
+   "class_area_share": {
+    "core": 0.0335,
+    "urban": 0.0515,
+    "town": 0.0,
+    "rural": 0.915
    },
    "bbox": [
     113.42805,
@@ -2592,6 +3085,12 @@
     "town": 24,
     "rural": 83
    },
+   "class_area_share": {
+    "core": 0.0179,
+    "urban": 0.0107,
+    "town": 0.0292,
+    "rural": 0.9422
+   },
    "bbox": [
     115.10888,
     22.79503,
@@ -2618,6 +3117,12 @@
     "urban": 0,
     "town": 0,
     "rural": 0
+   },
+   "class_area_share": {
+    "core": 1.0,
+    "urban": 0.0,
+    "town": 0.0,
+    "rural": 0.0
    },
    "bbox": [
     113.23665,
@@ -2646,6 +3151,12 @@
     "town": 3,
     "rural": 42
    },
+   "class_area_share": {
+    "core": 0.0754,
+    "urban": 0.0,
+    "town": 0.0059,
+    "rural": 0.9187
+   },
    "bbox": [
     114.91332,
     22.12821,
@@ -2672,6 +3183,12 @@
     "urban": 7,
     "town": 19,
     "rural": 66
+   },
+   "class_area_share": {
+    "core": 0.106,
+    "urban": 0.0123,
+    "town": 0.0782,
+    "rural": 0.8035
    },
    "bbox": [
     112.88265,
@@ -2700,6 +3217,12 @@
     "town": 13,
     "rural": 69
    },
+   "class_area_share": {
+    "core": 0.0102,
+    "urban": 0.0,
+    "town": 0.0465,
+    "rural": 0.9433
+   },
    "bbox": [
     112.56313,
     23.5478,
@@ -2726,6 +3249,12 @@
     "urban": 3,
     "town": 11,
     "rural": 18
+   },
+   "class_area_share": {
+    "core": 0.123,
+    "urban": 0.0245,
+    "town": 0.1471,
+    "rural": 0.7054
    },
    "bbox": [
     116.56322,
@@ -2754,6 +3283,12 @@
     "town": 1,
     "rural": 16
    },
+   "class_area_share": {
+    "core": 0.2448,
+    "urban": 0.1054,
+    "town": 0.0017,
+    "rural": 0.648
+   },
    "bbox": [
     114.5236,
     23.53109,
@@ -2780,6 +3315,12 @@
     "urban": 18,
     "town": 12,
     "rural": 51
+   },
+   "class_area_share": {
+    "core": 0.1099,
+    "urban": 0.0804,
+    "town": 0.106,
+    "rural": 0.7036
    },
    "bbox": [
     116.24004,
@@ -2808,6 +3349,12 @@
     "town": 47,
     "rural": 116
    },
+   "class_area_share": {
+    "core": 0.0665,
+    "urban": 0.0545,
+    "town": 0.1166,
+    "rural": 0.7625
+   },
    "bbox": [
     116.36375,
     23.42758,
@@ -2834,6 +3381,12 @@
     "urban": 32,
     "town": 5,
     "rural": 41
+   },
+   "class_area_share": {
+    "core": 0.0605,
+    "urban": 0.1091,
+    "town": 0.0614,
+    "rural": 0.769
    },
    "bbox": [
     116.31243,
@@ -2862,6 +3415,12 @@
     "town": 14,
     "rural": 40
    },
+   "class_area_share": {
+    "core": 0.1289,
+    "urban": 0.0369,
+    "town": 0.1346,
+    "rural": 0.6996
+   },
    "bbox": [
     116.69757,
     22.96496,
@@ -2888,6 +3447,12 @@
     "urban": 15,
     "town": 0,
     "rural": 18
+   },
+   "class_area_share": {
+    "core": 0.2005,
+    "urban": 0.1599,
+    "town": 0.0,
+    "rural": 0.6396
    },
    "bbox": [
     116.61065,
@@ -2916,6 +3481,12 @@
     "town": 19,
     "rural": 156
    },
+   "class_area_share": {
+    "core": 0.006,
+    "urban": 0.0298,
+    "town": 0.0169,
+    "rural": 0.9472
+   },
    "bbox": [
     110.8625,
     21.03385,
@@ -2942,6 +3513,12 @@
     "urban": 0,
     "town": 0,
     "rural": 10
+   },
+   "class_area_share": {
+    "core": 0.8124,
+    "urban": 0.0,
+    "town": 0.0,
+    "rural": 0.1876
    },
    "bbox": [
     113.24397,
@@ -2970,6 +3547,12 @@
     "town": 2,
     "rural": 75
    },
+   "class_area_share": {
+    "core": 0.6906,
+    "urban": 0.0,
+    "town": 0.0023,
+    "rural": 0.3071
+   },
    "bbox": [
     113.14375,
     23.14065,
@@ -2996,6 +3579,12 @@
     "urban": 0,
     "town": 0,
     "rural": 0
+   },
+   "class_area_share": {
+    "core": 1.0,
+    "urban": 0.0,
+    "town": 0.0,
+    "rural": 0.0
    },
    "bbox": [
     114.19863,
@@ -3024,6 +3613,12 @@
     "town": 1,
     "rural": 1
    },
+   "class_area_share": {
+    "core": 0.6639,
+    "urban": 0.3247,
+    "town": 0.0048,
+    "rural": 0.0066
+   },
    "bbox": [
     112.97489,
     22.9246,
@@ -3050,6 +3645,12 @@
     "urban": 0,
     "town": 1,
     "rural": 0
+   },
+   "class_area_share": {
+    "core": 0.9941,
+    "urban": 0.0,
+    "town": 0.0059,
+    "rural": 0.0
    },
    "bbox": [
     113.98602,
@@ -3078,6 +3679,12 @@
     "town": 2,
     "rural": 14
    },
+   "class_area_share": {
+    "core": 0.4107,
+    "urban": 0.0,
+    "town": 0.0017,
+    "rural": 0.5877
+   },
    "bbox": [
     112.39392,
     23.04005,
@@ -3104,6 +3711,12 @@
     "urban": 10,
     "town": 0,
     "rural": 102
+   },
+   "class_area_share": {
+    "core": 0.0039,
+    "urban": 0.0122,
+    "town": 0.0,
+    "rural": 0.9839
    },
    "bbox": [
     114.62669,
@@ -3132,6 +3745,12 @@
     "town": 13,
     "rural": 117
    },
+   "class_area_share": {
+    "core": 0.0078,
+    "urban": 0.0047,
+    "town": 0.0076,
+    "rural": 0.98
+   },
    "bbox": [
     111.05273,
     22.42795,
@@ -3158,6 +3777,12 @@
     "urban": 0,
     "town": 1,
     "rural": 0
+   },
+   "class_area_share": {
+    "core": 0.9968,
+    "urban": 0.0,
+    "town": 0.0032,
+    "rural": 0.0
    },
    "bbox": [
     114.0611,
@@ -3186,6 +3811,12 @@
     "town": 0,
     "rural": 63
    },
+   "class_area_share": {
+    "core": 0.0037,
+    "urban": 0.0015,
+    "town": 0.0,
+    "rural": 0.9949
+   },
    "bbox": [
     113.65475,
     24.1216,
@@ -3212,6 +3843,12 @@
     "urban": 0,
     "town": 28,
     "rural": 65
+   },
+   "class_area_share": {
+    "core": 0.1989,
+    "urban": 0.0,
+    "town": 0.1035,
+    "rural": 0.6976
    },
    "bbox": [
     112.95237,
@@ -3240,6 +3877,12 @@
     "town": 20,
     "rural": 190
    },
+   "class_area_share": {
+    "core": 0.0024,
+    "urban": 0.0043,
+    "town": 0.0127,
+    "rural": 0.9806
+   },
    "bbox": [
     112.75519,
     23.84577,
@@ -3266,6 +3909,12 @@
     "urban": 10,
     "town": 6,
     "rural": 60
+   },
+   "class_area_share": {
+    "core": 0.0422,
+    "urban": 0.0558,
+    "town": 0.0235,
+    "rural": 0.8784
    },
    "bbox": [
     110.73615,
@@ -3294,6 +3943,12 @@
     "town": 0,
     "rural": 0
    },
+   "class_area_share": {
+    "core": 1.0,
+    "urban": 0.0,
+    "town": 0.0,
+    "rural": 0.0
+   },
    "bbox": [
     113.17172,
     23.04411,
@@ -3320,6 +3975,12 @@
     "urban": 8,
     "town": 1,
     "rural": 18
+   },
+   "class_area_share": {
+    "core": 0.4586,
+    "urban": 0.0528,
+    "town": 0.0083,
+    "rural": 0.4803
    },
    "bbox": [
     112.91637,
@@ -3348,6 +4009,12 @@
     "town": 0,
     "rural": 40
    },
+   "class_area_share": {
+    "core": 0.0,
+    "urban": 0.0119,
+    "town": 0.0,
+    "rural": 0.9881
+   },
    "bbox": [
     116.01902,
     24.42479,
@@ -3374,6 +4041,12 @@
     "urban": 2,
     "town": 1,
     "rural": 7
+   },
+   "class_area_share": {
+    "core": 0.4448,
+    "urban": 0.0439,
+    "town": 0.0156,
+    "rural": 0.4957
    },
    "bbox": [
     110.32066,
@@ -3402,6 +4075,12 @@
     "town": 0,
     "rural": 0
    },
+   "class_area_share": {
+    "core": 1.0,
+    "urban": 0.0,
+    "town": 0.0,
+    "rural": 0.0
+   },
    "bbox": [
     113.23514,
     23.10779,
@@ -3428,6 +4107,12 @@
     "urban": 0,
     "town": 1,
     "rural": 29
+   },
+   "class_area_share": {
+    "core": 0.0046,
+    "urban": 0.0,
+    "town": 0.0034,
+    "rural": 0.992
    },
    "bbox": [
     112.04993,
@@ -3456,6 +4141,12 @@
     "town": 1,
     "rural": 30
    },
+   "class_area_share": {
+    "core": 0.003,
+    "urban": 0.0008,
+    "town": 0.0007,
+    "rural": 0.9955
+   },
    "bbox": [
     111.9223,
     24.18766,
@@ -3482,6 +4173,12 @@
     "urban": 4,
     "town": 2,
     "rural": 68
+   },
+   "class_area_share": {
+    "core": 0.0036,
+    "urban": 0.0031,
+    "town": 0.0012,
+    "rural": 0.992
    },
    "bbox": [
     112.11445,
@@ -3510,6 +4207,12 @@
     "town": 1,
     "rural": 62
    },
+   "class_area_share": {
+    "core": 0.0035,
+    "urban": 0.0021,
+    "town": 0.0021,
+    "rural": 0.9923
+   },
    "bbox": [
     114.2362,
     24.09755,
@@ -3536,6 +4239,12 @@
     "urban": 6,
     "town": 5,
     "rural": 103
+   },
+   "class_area_share": {
+    "core": 0.0017,
+    "urban": 0.0049,
+    "town": 0.0098,
+    "rural": 0.9836
    },
    "bbox": [
     109.39173,
@@ -3564,6 +4273,12 @@
     "town": 1,
     "rural": 80
    },
+   "class_area_share": {
+    "core": 0.0019,
+    "urban": 0.0079,
+    "town": 0.0016,
+    "rural": 0.9886
+   },
    "bbox": [
     111.35114,
     22.79293,
@@ -3590,6 +4305,12 @@
     "urban": 3,
     "town": 0,
     "rural": 8
+   },
+   "class_area_share": {
+    "core": 0.406,
+    "urban": 0.0438,
+    "town": 0.0,
+    "rural": 0.5501
    },
    "bbox": [
     116.56446,
@@ -3618,6 +4339,12 @@
     "town": 5,
     "rural": 58
    },
+   "class_area_share": {
+    "core": 0.0783,
+    "urban": 0.1328,
+    "town": 0.0163,
+    "rural": 0.7725
+   },
    "bbox": [
     113.07495,
     21.41974,
@@ -3644,6 +4371,12 @@
     "urban": 13,
     "town": 12,
     "rural": 60
+   },
+   "class_area_share": {
+    "core": 0.0113,
+    "urban": 0.0125,
+    "town": 0.0133,
+    "rural": 0.9629
    },
    "bbox": [
     111.77021,
@@ -3672,6 +4405,12 @@
     "town": 3,
     "rural": 79
    },
+   "class_area_share": {
+    "core": 0.0024,
+    "urban": 0.0009,
+    "town": 0.0017,
+    "rural": 0.995
+   },
    "bbox": [
     112.36689,
     23.96777,
@@ -3698,6 +4437,12 @@
     "urban": 8,
     "town": 13,
     "rural": 116
+   },
+   "class_area_share": {
+    "core": 0.0066,
+    "urban": 0.0051,
+    "town": 0.0107,
+    "rural": 0.9776
    },
    "bbox": [
     111.27803,
@@ -3726,6 +4471,12 @@
     "town": 0,
     "rural": 48
    },
+   "class_area_share": {
+    "core": 0.0085,
+    "urban": 0.0086,
+    "town": 0.0,
+    "rural": 0.983
+   },
    "bbox": [
     111.3689,
     20.15619,
@@ -3752,6 +4503,12 @@
     "urban": 28,
     "town": 25,
     "rural": 128
+   },
+   "class_area_share": {
+    "core": 0.01,
+    "urban": 0.0269,
+    "town": 0.0205,
+    "rural": 0.9425
    },
    "bbox": [
     115.46618,
@@ -3780,6 +4537,12 @@
     "town": 17,
     "rural": 46
    },
+   "class_area_share": {
+    "core": 0.0011,
+    "urban": 0.0173,
+    "town": 0.0267,
+    "rural": 0.9549
+   },
    "bbox": [
     115.41153,
     23.11773,
@@ -3806,6 +4569,12 @@
     "urban": 5,
     "town": 2,
     "rural": 158
+   },
+   "class_area_share": {
+    "core": 0.0032,
+    "urban": 0.0058,
+    "town": 0.0012,
+    "rural": 0.9898
    },
    "bbox": [
     109.40632,
@@ -3834,6 +4603,12 @@
     "town": 0,
     "rural": 7
    },
+   "class_area_share": {
+    "core": 0.3292,
+    "urban": 0.2265,
+    "town": 0.0,
+    "rural": 0.4443
+   },
    "bbox": [
     110.31301,
     21.08409,
@@ -3860,6 +4635,12 @@
     "urban": 63,
     "town": 90,
     "rural": 9
+   },
+   "class_area_share": {
+    "core": 0.4946,
+    "urban": 0.1585,
+    "town": 0.3241,
+    "rural": 0.0227
    },
    "bbox": [
     113.00243,
@@ -3888,6 +4669,12 @@
     "town": 32,
     "rural": 115
    },
+   "class_area_share": {
+    "core": 0.0136,
+    "urban": 0.0032,
+    "town": 0.0304,
+    "rural": 0.9528
+   },
    "bbox": [
     116.69315,
     23.48112,
@@ -3914,6 +4701,12 @@
     "urban": 43,
     "town": 6,
     "rural": 58
+   },
+   "class_area_share": {
+    "core": 0.2896,
+    "urban": 0.1313,
+    "town": 0.0048,
+    "rural": 0.5743
    },
    "bbox": [
     113.40857,
@@ -3942,6 +4735,12 @@
     "town": 15,
     "rural": 182
    },
+   "class_area_share": {
+    "core": 0.002,
+    "urban": 0.0065,
+    "town": 0.0056,
+    "rural": 0.9858
+   },
    "bbox": [
     110.61293,
     21.7101,
@@ -3968,6 +4767,12 @@
     "urban": 10,
     "town": 40,
     "rural": 46
+   },
+   "class_area_share": {
+    "core": 0.0352,
+    "urban": 0.0306,
+    "town": 0.2713,
+    "rural": 0.6628
    },
    "bbox": [
     112.38549,
@@ -3996,6 +4801,12 @@
     "town": 10,
     "rural": 72
    },
+   "class_area_share": {
+    "core": 0.0353,
+    "urban": 0.0,
+    "town": 0.0182,
+    "rural": 0.9465
+   },
    "bbox": [
     112.18034,
     22.77241,
@@ -4022,6 +4833,12 @@
     "urban": 9,
     "town": 11,
     "rural": 64
+   },
+   "class_area_share": {
+    "core": 0.0282,
+    "urban": 0.0307,
+    "town": 0.0787,
+    "rural": 0.8624
    },
    "bbox": [
     112.47137,
@@ -4050,6 +4867,12 @@
     "town": 2,
     "rural": 54
    },
+   "class_area_share": {
+    "core": 0.0521,
+    "urban": 0.0628,
+    "town": 0.0155,
+    "rural": 0.8696
+   },
    "bbox": [
     110.1172,
     20.17475,
@@ -4076,6 +4899,12 @@
     "urban": 0,
     "town": 38,
     "rural": 17
+   },
+   "class_area_share": {
+    "core": 0.4413,
+    "urban": 0.0,
+    "town": 0.1332,
+    "rural": 0.4255
    },
    "bbox": [
     113.39248,
@@ -4104,6 +4933,12 @@
     "town": 7,
     "rural": 50
    },
+   "class_area_share": {
+    "core": 0.0329,
+    "urban": 0.0141,
+    "town": 0.0541,
+    "rural": 0.899
+   },
    "bbox": [
     112.44233,
     23.09315,
@@ -4130,6 +4965,12 @@
     "urban": 1,
     "town": 19,
     "rural": 0
+   },
+   "class_area_share": {
+    "core": 0.882,
+    "urban": 0.0128,
+    "town": 0.1051,
+    "rural": 0.0
    },
    "bbox": [
     113.96143,
@@ -4158,6 +4999,12 @@
     "town": 8,
     "rural": 0
    },
+   "class_area_share": {
+    "core": 0.9878,
+    "urban": 0.0011,
+    "town": 0.0111,
+    "rural": 0.0
+   },
    "bbox": [
     114.04569,
     21.82136,
@@ -4184,6 +5031,12 @@
     "urban": 5,
     "town": 14,
     "rural": 105
+   },
+   "class_area_share": {
+    "core": 0.0028,
+    "urban": 0.0014,
+    "town": 0.008,
+    "rural": 0.9878
    },
    "bbox": [
     115.05302,
@@ -4212,6 +5065,12 @@
     "town": 3,
     "rural": 8
    },
+   "class_area_share": {
+    "core": 0.4461,
+    "urban": 0.3053,
+    "town": 0.0541,
+    "rural": 0.1945
+   },
    "bbox": [
     116.69414,
     22.95287,
@@ -4239,6 +5098,12 @@
     "town": 4,
     "rural": 83
    },
+   "class_area_share": {
+    "core": 0.0015,
+    "urban": 0.0041,
+    "town": 0.0044,
+    "rural": 0.99
+   },
    "bbox": [
     113.80805,
     23.3353,
@@ -4253,5 +5118,11 @@
   }
  },
  "candidate_ratio_min": 1.5,
- "candidate_ratio_max": 10.0
+ "candidate_ratio_max": 10.0,
+ "class_area_share": {
+  "core": 0.051,
+  "urban": 0.0208,
+  "town": 0.0255,
+  "rural": 0.9026
+ }
 }

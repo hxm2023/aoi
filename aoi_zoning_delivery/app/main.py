@@ -1,5 +1,7 @@
 """Minimal commercial API: region catalog, zoning jobs, static web app."""
 from __future__ import annotations
+import hashlib
+import json
 import math
 import os
 from pathlib import Path
@@ -24,6 +26,20 @@ _REFERENCE_DIR = ROOT / "data" / "reference"
 _REF_CACHE = {"stamp": None, "gdf": None}
 _BOUND_CACHE = {}
 _BASEMAP_CACHE = {}
+
+
+def _basemap_disk_path(bbox, key):
+    h = hashlib.sha1(bbox.encode()).hexdigest()[:16]
+    d = CACHE / "basemap"
+    d.mkdir(parents=True, exist_ok=True)
+    return d / f"{h}.json"
+
+
+def _save_basemap_disk(p, out):
+    try:
+        p.write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[basemap] disk cache skipped: {exc}")
 _LAYER_CACHE = {}
 
 
@@ -95,6 +111,14 @@ def zoning_basemap(bbox: str, key: str | None = None):
     cache_key = f"{key or ''}|{bbox}"
     if cache_key in _BASEMAP_CACHE:
         return _BASEMAP_CACHE[cache_key]
+    pdisk = _basemap_disk_path(bbox, key)
+    if pdisk.exists():
+        try:
+            out = json.loads(pdisk.read_text(encoding="utf-8"))
+            _BASEMAP_CACHE[cache_key] = out
+            return out
+        except Exception as exc:  # noqa: BLE001
+            print(f"[basemap] disk cache ignored: {exc}")
     try:
         bb = tuple(float(x) for x in bbox.split(","))
     except Exception:
@@ -147,6 +171,7 @@ def zoning_basemap(bbox: str, key: str | None = None):
                     if len(_BASEMAP_CACHE) > 8:
                         _BASEMAP_CACHE.clear()
                     _BASEMAP_CACHE[cache_key] = out
+                    _save_basemap_disk(pdisk, out)
                     return out
             except Exception as exc:  # noqa: BLE001
                 print(f"[basemap] cached lines skipped: {exc}")
@@ -239,6 +264,7 @@ def zoning_basemap(bbox: str, key: str | None = None):
     if len(_BASEMAP_CACHE) > 8:
         _BASEMAP_CACHE.clear()
     _BASEMAP_CACHE[cache_key] = out
+    _save_basemap_disk(pdisk, out)
     return out
 
 

@@ -327,6 +327,12 @@ def resolve(bbox, allow_download=None):
         return p
     prov = _china_province(bbox)
     name = prov["name"] if prov is not None else "该区域"
+    if prov is not None and prov.get("available") and prov.get("pbf"):
+        # Coastal county bboxes reach past the PBF land extent (Suixi's
+        # west edge is open sea), so the 90% area test fails although the
+        # province is unambiguous.  Fall back to its local PBF; the service
+        # clips the working bbox to the available data afterwards.
+        return Path(prov["pbf"])
     if prov is not None and not prov.get("available"):
         raise ValueError(f"{name}目前无本地 OSM 数据，暂不支持")
     raise ValueError(f"{name}目前无本地 OSM 数据，暂不支持")

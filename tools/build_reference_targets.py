@@ -133,6 +133,23 @@ def main():
                 "town": int(vc.get("乡镇镇区", 0)),
                 "rural": int(vc.get("农村", 0))}
 
+    def scene_area_share(grp):
+        """Fraction of reference area per scene class.
+
+        Zone counts are never used as targets; this share only decides how
+        much of an administrative unit is core/urban/town/rural so the
+        per-class area ranges are applied to the right land.
+        """
+        s = grp.groupby(grp["场景区域属性"].astype(str))["_area"].sum()
+        tot = float(s.sum())
+        if tot <= 0:
+            return None
+        vals = {"core": float(s.get("核心城区", 0.0)),
+                "urban": float(s.get("非核心城区", 0.0)),
+                "town": float(s.get("乡镇镇区", 0.0)),
+                "rural": float(s.get("农村", 0.0))}
+        return {k: round(v / tot, 4) for k, v in vals.items()}
+
     def extent(g, main):
         b = g.bounds
         p = main.representative_point()
@@ -156,6 +173,7 @@ def main():
             "area_km2": round(float(grp["_area"].sum()), 1),
             "area_p10_p50_p90": q(grp["_area"].to_numpy()),
             "class_counts": scene_counts(grp),
+            "class_area_share": scene_area_share(grp),
             "counties": sorted(county_names_by_city.get(name, [])),
             "bbox": bbox,
             "center": center,
@@ -181,6 +199,7 @@ def main():
             "area_km2": round(float(grp["_area"].sum()), 1),
             "area_p10_p50_p90": q(grp["_area"].to_numpy()),
             "class_counts": scene_counts(grp),
+            "class_area_share": scene_area_share(grp),
             "bbox": bbox,
             "center": center,
             "level": "6",

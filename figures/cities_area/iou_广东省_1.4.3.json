@@ -1,0 +1,15 @@
+{
+ "city": "全省",
+ "ours": 17140,
+ "refs": 17357,
+ "ours_area_km2": 180747.4,
+ "refs_area_km2": 179257.8,
+ "pairs": 82700,
+ "iou_ref_best_mean": 0.2882,
+ "iou_greedy_1_1": 0.3394,
+ "matched": 12154,
+ "matched_frac": 0.7002,
+ "iou_allref": 0.2376,
+ "area_p50_ours": 3.011,
+ "area_p50_ref": 2.728
+}
