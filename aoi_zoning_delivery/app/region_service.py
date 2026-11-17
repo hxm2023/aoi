@@ -3080,8 +3080,9 @@ def generate_guangdong_aggregate(bbox, force=False, scope="province",
         # the merge/reclassify pass over the union would cut county seams
         # with roadless bisections.  Only catch zones grown past the class
         # max by seam repair, keeping the stored density_class labels.
-        _m = enforce_area_ranges(_m, split_only=True)
-        _m, _ng = repartition_rings(_m)
+        if os.environ.get("XGB_SOFT_FINALIZE", "1") != "1":
+            _m = enforce_area_ranges(_m, split_only=True)
+        _m, _ng = repartition_rings(_m, soft=os.environ.get("XGB_SOFT_FINALIZE", "1") == "1")
         _m = fill_empty_rings(_m)
         # A repartition can expose a second ring group at a county seam.
         _m, _ng2 = repartition_rings(_m)
@@ -3300,7 +3301,12 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
         # area before the XGB pair stage.
         avg_m2 = (work_area / max(target, 1)) * 1e6
         _min_block = int(max(20000, min(2000000, avg_m2 / 8.0)))
-    _cut = os.environ.get("XGB_CUT", "tiered")
+    _cut = os.environ.get("XGB_CUT", "ref")
+    if _cut in ("ref", "selected"):
+        # The reference-selected cut already lands near 1.5-3x the standard
+        # count; merging sub-faces by the old target-derived area would
+        # collapse that candidate set before XGB sees it.
+        _min_block = int(os.environ.get("XGB_MIN_BLOCK_M2", "1000"))
     env = os.environ.copy()
     env.update({
         "XGB_PBF": pbf,
@@ -3313,6 +3319,14 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
         # default it off for the fine path as well.
         "XGB_QUALITY_VORONOI": os.environ.get("XGB_QUALITY_VORONOI", "0"),
         "XGB_CUT": _cut,
+        "XGB_PARALLEL": os.environ.get("XGB_PARALLEL", "1"),
+        "XGB_LOCAL_MODE": os.environ.get("XGB_LOCAL_MODE", "mix"),
+        "XGB_LOCAL_LEN": os.environ.get("XGB_LOCAL_LEN", "600"),
+        "XGB_WEAK_CUT": os.environ.get("XGB_WEAK_CUT", "1"),
+        "XGB_MERGE_MODE": os.environ.get(
+            "XGB_MERGE_MODE", "prob" if _cut in ("ref", "selected") else "area"),
+        "XGB_PROB_MIN_P": os.environ.get("XGB_PROB_MIN_P", "0.45"),
+        "XGB_PROB_MAX_AREA": os.environ.get("XGB_PROB_MAX_AREA", "60"),
         "XGB_TARGET": str(target),
         "XGB_REF_TARGET": "",
         "XGB_LOCAL_TARGET": ("0" if (city_mode or ref_target) else
@@ -3321,10 +3335,10 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
         # Default scheme: partition on raw OSM road lines (no dual collapse /
         # stroke merge / smoothing), absorb sub-1000 m2 faces, and treat
         # sub-20 m slivers as bad zones.
-        "XGB_RAW_LINES": os.environ.get("XGB_RAW_LINES", "1"),
+        "XGB_RAW_LINES": os.environ.get("XGB_RAW_LINES", "0"),
         "XGB_SLIVER_W": os.environ.get(
             "XGB_SLIVER_W",
-            "20" if os.environ.get("XGB_RAW_LINES", "1") == "1"
+            "20" if os.environ.get("XGB_RAW_LINES", "0") == "1"
             else ("60" if city_mode else "45")),
         "XGB_MIN_BLOCK_M2": (str(_min_block) if _min_block else
                              os.environ.get("XGB_MIN_BLOCK_M2", "1000")),
@@ -3333,9 +3347,11 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
         "XGB_FINAL_TARGET": ("9999" if ref_target else str(target)),
         "XGB_SMOOTH": os.environ.get("XGB_SMOOTH", "0"),
         "XGB_SMOOTH_TOL": os.environ.get("XGB_SMOOTH_TOL", "10" if city_mode else "16"),
-        "XGB_ADMIN_CUT": os.environ.get("XGB_ADMIN_CUT", "4,5,6,8,10"),
-        "XGB_LU_CUT": "1",
-        "XGB_RURAL_CUTS": "1",
+        "XGB_ADMIN_CUT": os.environ.get(
+            "XGB_ADMIN_CUT", "" if _cut in ("ref", "selected") else "4,5,6,8,10"),
+        "XGB_LU_CUT": os.environ.get("XGB_LU_CUT", "0"),
+        "XGB_RURAL_CUTS": os.environ.get("XGB_RURAL_CUTS", "0"),
+        "XGB_SOFT_FINALIZE": os.environ.get("XGB_SOFT_FINALIZE", "1"),
         # Voronoi cuts are the main source of boundaries that do not follow
         # an OSM line.  The controlled county test (Futian, 78.7 km2) with
         # both off: IoU 0.381 vs 0.373, 10 m alignment 0.651 vs 0.608,

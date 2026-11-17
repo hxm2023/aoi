@@ -782,6 +782,50 @@ def _merge_tiny_blocks(blocks, min_m2=1000.0):
     return b
 
 
+def _merge_hole_enclaves(blocks):
+    """Union land blocks sitting inside another block's interior rings."""
+    g = blocks.reset_index(drop=True).copy()
+    geoms = list(g.geometry)
+    kinds = list(g["kind"].astype(str))
+    tree = shapely.STRtree(geoms)
+    absorbed = set()
+    for i, geom in enumerate(geoms):
+        if i in absorbed or kinds[i] != "land":
+            continue
+        holes = [shapely.Polygon(r)
+                 for p in shapely.get_parts(geom) if p.geom_type == "Polygon"
+                 for r in p.interiors]
+        # Only small closed-loop rings are zone-in-zone artifacts; a large
+        # interior hole is real landscape and must not swallow its contents.
+        holes = [h for h in holes if h.area <= 2.0e4]
+        if not holes:
+            continue
+        inside = set()
+        for h in holes:
+            for j in tree.query(h, predicate="intersects"):
+                j = int(j)
+                if j == i or j in absorbed or kinds[j] != "land":
+                    continue
+                try:
+                    if h.contains(geoms[j].representative_point()):
+                        inside.add(j)
+                except Exception:  # noqa: BLE001
+                    continue
+        if inside:
+            if sum(geoms[j].area for j in inside) > 0.15 * geom.area:
+                continue
+            try:
+                geoms[i] = shapely.union_all([geom] + [geoms[j]
+                                                       for j in inside])
+                absorbed.update(inside)
+            except Exception:  # noqa: BLE001
+                continue
+    keep = [k for k in range(len(g)) if k not in absorbed]
+    out = g.iloc[keep].copy().reset_index(drop=True)
+    out["geometry"] = [geoms[k] for k in keep]
+    return out
+
+
 def build_blocks(lines):
     t0 = time.time()
     mp = read_osm("multipolygons").to_crs(CRS)
@@ -812,6 +856,8 @@ def build_blocks(lines):
         d["geometry"] = d.geometry.map(make_valid)
         d = d[d.geometry.notna() & ~d.geometry.is_empty]
     water = water.explode(index_parts=False, ignore_index=True)
+    water_union = (unary_union(water.geometry.tolist())
+                   if len(water) else None)
     admin = admin.explode(index_parts=False, ignore_index=True)
     admin_cut = admin_cut.explode(index_parts=False, ignore_index=True)
     lu = lu.explode(index_parts=False, ignore_index=True)
@@ -855,7 +901,47 @@ def build_blocks(lines):
         is_local = is_local & _gate.reindex(lines.index).fillna(False).astype(bool)
     cut_mode = os.environ.get("XGB_CUT", "tiered")
     tiered = cut_mode == "tiered"
-    if tiered:
+    ref_mode = cut_mode in ("ref", "selected")
+    if ref_mode:
+        # Feature lines selected by the reference-scheme boundary analysis:
+        # all road classes (local everywhere, service/path as weak), rivers,
+        # streams, water polygon edges and rail.  No admin/landuse/leisure
+        # cuts; no built-up gating because village roads carry 12-19% of the
+        # reference boundaries in town/rural scenes.
+        is_major_t = hw.isin({"motorway", "trunk", "primary", "secondary"})
+        is_minor_t = hw.eq("tertiary")
+        is_local_t = hw.isin({"residential", "unclassified",
+                              "living_street"})
+        _weak = os.environ.get("XGB_WEAK_CUT", "1") == "1"
+        is_weak = hw.isin({"service", "footway", "path", "track",
+                           "cycleway", "steps", "pedestrian"})
+        _loc_mode = os.environ.get("XGB_LOCAL_MODE", "all")
+        _built = (lu[lu["landuse"].astype("string").isin(BUILT_CLASSES)]
+                  if len(lu) else lu)
+        if len(_built):
+            _bu = unary_union(_built.geometry.buffer(300.0))
+            _built_only = lines.intersects(_bu)
+        else:
+            _built_only = pd.Series(False, index=lines.index)
+        if _loc_mode == "none":
+            is_local_t = is_local_t & False
+        elif _loc_mode == "long":
+            is_local_t = is_local_t & (lines["length"] >= 300.0)
+        elif _loc_mode in ("built", "mix"):
+            _bm = _built_only
+            if _loc_mode == "mix":
+                _llen = float(os.environ.get("XGB_LOCAL_LEN", "500"))
+                _bm = _bm | (lines["length"] >= _llen)
+            is_local_t = is_local_t & _bm
+        # Service roads and paths are weak signals in the reference scheme
+        # (1-3% of boundaries, mostly urban); gate them to built-up land.
+        if _weak:
+            is_weak = is_weak & _built_only
+        else:
+            is_weak = is_weak & False
+        local_mask = is_local_t | is_weak
+        road_mask = is_major_t | is_minor_t | local_mask
+    elif tiered:
         # tier1: river + admin L6/L8; tier2: major/minor/rail/barrier;
         # tier3: local roads only inside built-up landuse + streams.
         is_major_t = hw.isin({"motorway", "trunk", "primary", "secondary"})
@@ -884,7 +970,7 @@ def build_blocks(lines):
     # Merge each named/ref road first, then node the whole cut network.  This
     # is the difference between "20 OSM ways" and "one road": linemerge joins
     # through degree-2 vertices and stops at real junctions.
-    if tiered:
+    if tiered or ref_mode:
         pass  # road_mask already set above
     elif cut_mode == "major":
         # Whole-city mode: only motorway/trunk/primary (plus admin, water and
@@ -913,14 +999,26 @@ def build_blocks(lines):
     # noding, so a river crossing no longer breaks the road identity.
     _natl = (lines["natural"] if "natural" in lines.columns
              else pd.Series("", index=lines.index, dtype="string"))
-    if tiered:
+    if ref_mode:
         _stream = (lines["waterway"].isin({"stream", "drain", "ditch"})
-                   & (lines["length"] >= 400.0))
-        _barrier = (lines["barrier"].notna()
-                    & (lines["length"] >= 30.0)) if "barrier" in lines             else pd.Series(False, index=lines.index)
+                   & (lines["length"] >= 200.0))
+        _wp = (lines["klass"].eq("water_poly")
+               if "klass" in lines.columns
+               else pd.Series(False, index=lines.index))
+        _nv = (lines["klass"].eq("natural_veg")
+               if "klass" in lines.columns
+               else pd.Series(False, index=lines.index))
+        if os.environ.get("XGB_NATURAL_CUT", "1") != "1":
+            _nv = _nv & False
         other = lines[(lines["railway"].notna()
                        | lines["waterway"].isin({"river", "canal"})
-                       | _stream | _barrier)]
+                       | _stream | _wp | _nv)]
+    elif tiered:
+        _stream = (lines["waterway"].isin({"stream", "drain", "ditch"})
+                   & (lines["length"] >= 400.0))
+        other = lines[(lines["railway"].notna()
+                       | lines["waterway"].isin({"river", "canal"})
+                       | _stream)]
     else:
         other = lines[(lines["railway"].notna()
                        | lines["waterway"].isin({"river", "canal"})
@@ -933,25 +1031,26 @@ def build_blocks(lines):
         for p in shapely.get_parts(h):
             if p.geom_type in ("LineString", "MultiLineString") and not p.is_empty:
                 parts.append(p)
-    for geom in admin_cut.geometry.boundary:
-        h = geom.intersection(frame)
-        for p in shapely.get_parts(h):
-            if p.geom_type in ("LineString", "MultiLineString") and not p.is_empty:
-                parts.append(p)
-    if LU_CUT and not tiered:
+    if not ref_mode:
+        for geom in admin_cut.geometry.boundary:
+            h = geom.intersection(frame)
+            for p in shapely.get_parts(h):
+                if p.geom_type in ("LineString", "MultiLineString") and not p.is_empty:
+                    parts.append(p)
+    if LU_CUT and not (tiered or ref_mode):
         for geom in lu.geometry.boundary:
             h = geom.intersection(frame)
             for p in shapely.get_parts(h):
                 if p.geom_type in ("LineString", "MultiLineString") and not p.is_empty:
                     parts.append(p)
-    if (not tiered
+    if (not (tiered or ref_mode)
             and os.environ.get("XGB_LEISURE_CUT", "0") == "1"):
         for geom in leis.geometry.boundary:
             h = geom.intersection(frame)
             for p in shapely.get_parts(h):
                 if p.geom_type in ("LineString", "MultiLineString") and not p.is_empty:
                     parts.append(p)
-    if RURAL_CUTS and not tiered:
+    if RURAL_CUTS and not (tiered or ref_mode):
         # Outside the urban core, terrain and streams are often the only
         # OSM-visible split.  The reference has 28% boundaries with no
         # road/admin explanation in rural Kuichong, so these cuts are the
@@ -988,6 +1087,45 @@ def build_blocks(lines):
             for q in shapely.get_parts(h):
                 if q.geom_type in ("LineString", "MultiLineString") and not q.is_empty:
                     parts.append(q)
+    # Closed loops detached from the main road/water network create faces
+    # with interior rings; XGB may then merge the inside and outside blocks
+    # into different zones, producing a zone-in-zone that the finalize has to
+    # remove by merging zones (a large count loss).  Connect each such loop
+    # to its nearest other line with a short connector, so the tessellation
+    # has no holes and the inside/outside blocks stay adjacent.
+    try:
+        _merged_loop = linemerge(unary_union(parts))
+        _all_lines = [q for q in shapely.get_parts(_merged_loop)
+                      if q.geom_type == "LineString" and not q.is_empty]
+        _rings = [q for q in _all_lines if q.is_ring
+                  and shapely.Polygon(q).area < 0.5 * frame.area]
+        if _rings:
+            _tree = shapely.STRtree(np.array(_all_lines, dtype=object))
+            _added = 0
+            for _r in _rings:
+                try:
+                    _idx, _dist = _tree.query_nearest(
+                        _r, max_distance=500.0, return_distance=True,
+                        all_matches=False)
+                    for _k in range(len(_idx[0])):
+                        _j = int(_idx[1][_k])
+                        _cand = _all_lines[_j]
+                        if _cand is _r or _cand.equals(_r):
+                            continue
+                        _conn = shapely.shortest_line(_r, _cand)
+                        if (_conn is not None and not _conn.is_empty
+                                and _conn.length <= 500.0
+                                and _conn.length > 1.0):
+                            parts.append(_conn)
+                            _added += 1
+                            break
+                except Exception:  # noqa: BLE001
+                    continue
+            if _added:
+                print(f"[loop-connect] {_added} closed loops connected "
+                      f"to the network", flush=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[loop-connect] skipped: {exc}", flush=True)
     raw_segments = len(parts)
     cut_union = unary_union(parts)
     if cut_union.geom_type == "LineString":
@@ -1014,6 +1152,11 @@ def build_blocks(lines):
     rep = fg.geometry.representative_point()
     if lake_union is not None:
         lake_mask = shapely.contains(lake_union, rep)
+    elif water_union is not None:
+        # Every water-polygon face is water, not a land candidate.  Keeping
+        # pond/lake interiors as land blocks let XGB merge them away and left
+        # the surrounding host with an interior ring (zone-in-zone).
+        lake_mask = shapely.contains(water_union, rep)
     else:
         lake_mask = np.zeros(len(fg), dtype=bool)
     if gap_union is not None:
@@ -1060,6 +1203,15 @@ def build_blocks(lines):
     # polygons can overlap each other or extend outside the study frame, which
     # would break the no-overlap gate.
     lakeb = fg[lake_mask].copy()
+    if (os.environ.get("XGB_SEPARATE_LAKES", "0") != "1"
+            and len(lakeb) and len(landb)):
+        # Default water policy: water is not a zone; give each water face
+        # to the touching land block before XGB, so no host keeps a ring.
+        assigns = _assign_pieces_to_hosts(landb, lakeb)
+        for bid, geoms in assigns.items():
+            landb.at[bid, "geometry"] = unary_union(
+                [landb.at[bid, "geometry"]] + geoms)
+        lakeb = gpd.GeoDataFrame({"kind": []}, geometry=[], crs=CRS)
     landb["area_m2"] = landb.area
     gapb["area_m2"] = gapb.area
     lakeb["area_m2"] = lakeb.area
@@ -1071,6 +1223,22 @@ def build_blocks(lines):
     lakeb["kind"] = "lake"
     blocks = gpd.GeoDataFrame(pd.concat([landb, lakeb], ignore_index=True),
                               crs=CRS)
+    blocks["block_id"] = np.arange(len(blocks))
+    blocks["area_m2"] = blocks.area
+    blocks["area_km2"] = blocks["area_m2"] / 1e6
+    blocks["perim_km"] = blocks.length / 1e3
+    blocks["pp"] = 4 * np.pi * blocks.area_m2 / np.maximum(blocks.length ** 2, 1)
+    # A planar tessellation ring (closed road loop, water outline) otherwise
+    # becomes a zone-in-zone: the inside face may merge elsewhere and leave
+    # the surrounding face with an interior ring.  Union the inside land
+    # blocks into the host before XGB; the final layer then has no rings and
+    # no count has to be sacrificed to a post-hoc ring merge.
+    try:
+        blocks = _merge_hole_enclaves(blocks)
+        print(f"[ring-pre] {len(landb)+len(lakeb)} -> {len(blocks)} blocks "
+              f"after enclosing-hole pre-merge", flush=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[ring-pre] skipped: {exc}", flush=True)
     blocks["block_id"] = np.arange(len(blocks))
     blocks["area_m2"] = blocks.area
     blocks["area_km2"] = blocks["area_m2"] / 1e6
@@ -1522,6 +1690,11 @@ def make_pairs(blocks, lines, admin, ref, lu=None):
     pair["border_minor_frac"] = _near_frac(_line_tree(minor), 18.0)
     pair["border_local_frac"] = _near_frac(_line_tree(local), 15.0)
     pair["border_water_frac"] = _near_frac(_line_tree(rivers), 20.0)
+    _wp = (lines[lines["klass"].eq("water_poly")]
+           if "klass" in lines.columns else lines.iloc[0:0])
+    _streams = lines[lines["waterway"].isin({"stream", "drain", "ditch"})]
+    pair["border_water_poly_frac"] = _near_frac(_line_tree(_wp), 18.0)
+    pair["border_stream_frac"] = _near_frac(_line_tree(_streams), 15.0)
     for lev in ("6", "8", "10"):
         a = admin[admin["admin_level"].astype("string").eq(lev)]
         pair[f"border_admin{lev}_frac"] = _near_frac(_line_tree(a), 20.0)
@@ -1696,7 +1869,62 @@ def _merge_from_pairs(blocks, pair, target=None):
             return 0.75
         return 1.10
 
-    while True:
+    _prob_mode = os.environ.get("XGB_MERGE_MODE", "area") == "prob"
+    if _prob_mode:
+        # Probability-driven agglomeration: merge the highest-confidence
+        # adjacent pair first, subject to structural guards only.  No count
+        # or per-zone area target drives the decision.
+        edges = []
+        for (a, b), (mf, wf, raw_p) in pdict.items():
+            w = adj[a].get(b, 0.0)
+            if w > 0:
+                edges.append((w, raw_p, a, b, mf, wf))
+        edges.sort(key=lambda x: -x[0])
+        min_p = float(os.environ.get("XGB_PROB_MIN_P", "0.45"))
+        max_a = float(os.environ.get("XGB_PROB_MAX_AREA", "60"))
+        for w, raw_p, a, b, mf, wf in edges:
+            if raw_p < min_p:
+                break
+            ra, rb = find(a), find(b)
+            if ra == rb:
+                continue
+            if area[ra] + area[rb] > max_a:
+                continue
+            try:
+                border = shapely.intersection(
+                    shapely.boundary(geom[ra]), shapely.boundary(geom[rb]))
+                mfg = _major_frac(border)
+            except Exception:  # noqa: BLE001
+                mfg = mf
+            if max(mf, mfg) > float(
+                    os.environ.get("XGB_MAJOR_BLOCK", "0.50")):
+                continue
+            if wf > 0.50:
+                continue
+            if geom[ra].distance(geom[rb]) > 1e-6:
+                continue
+            u = unary_union([geom[ra], geom[rb]])
+            if u.geom_type == "MultiPolygon" and len(u.geoms) > 1:
+                continue
+            if _nholes(u) > max(_nholes(geom[ra]), _nholes(geom[rb])):
+                continue
+            ua = u.area / 1e6
+            up = 4 * np.pi * u.area / max(u.length ** 2, 1e-9)
+            if ua > 0.25 and up < float(
+                    os.environ.get("XGB_UNION_PP_MIN", "0.20")):
+                continue
+            if ua > 0.40 and _aspect(u) > float(
+                    os.environ.get("XGB_UNION_ASPECT_MAX", "4.0")):
+                continue
+            keep, drop = (ra, rb) if area[ra] >= area[rb] else (rb, ra)
+            parent[drop] = keep
+            geom[keep] = u
+            urb[keep] = ((urb[keep] * area[keep] + urb[drop] * area[drop])
+                         / max(area[keep] + area[drop], 1e-9))
+            distw[keep] = ((distw[keep] * area[keep] + distw[drop] * area[drop])
+                           / max(area[keep] + area[drop], 1e-9))
+            area[keep] += area[drop]
+    while not _prob_mode:
         roots = {find(i) for i in alive}
         if not roots:
             break
@@ -3822,9 +4050,11 @@ if __name__ == "__main__":
     if os.environ.get("XGB_PARALLEL", "0") == "1":
         lines, n_parallel = collapse_parallel_roads(lines)
     blocks, water, admin, gap, mp, barrier, lu = build_blocks(lines)
-    if RAW_LINES:
-        blocks = _merge_tiny_blocks(
-            blocks, min_m2=float(os.environ.get("XGB_MIN_BLOCK_M2", "1000")))
+    blocks = _merge_tiny_blocks(
+        blocks, min_m2=float(os.environ.get("XGB_MIN_BLOCK_M2", "1000")))
+    if os.environ.get("XGB_BLOCKS_ONLY", "0") == "1":
+        print(f"[blocks-only] {len(blocks)}", flush=True)
+        sys.exit(0)
     points = read_osm("points")
     if PLACE_SPLIT:
         blocks = subdivide_large_blocks(
@@ -3848,13 +4078,18 @@ if __name__ == "__main__":
     pair, b = make_pairs(feats, lines, admin, ref, lu)
     if not COMMERCIAL:
         pair.to_csv(OUT / "xgb_pairs.csv", index=False, encoding="utf-8-sig")
+    if os.environ.get("XGB_PAIRS_ONLY", "0") == "1":
+        print("[pairs-only] done", flush=True)
+        sys.exit(0)
     zones = train_merge(feats, pair)
-    if CITY_MODE:
-        zones = split_blocks_to_target(zones, feats, pair,
-                                       max_area=10.0, target=6.0)
-    else:
-        zones = split_blocks_to_target(zones, feats, pair,
-                                       max_area=1.2, target=0.8)
+    _ref_mode = os.environ.get("XGB_CUT", "tiered") in ("ref", "selected")
+    if not _ref_mode:
+        if CITY_MODE:
+            zones = split_blocks_to_target(zones, feats, pair,
+                                           max_area=10.0, target=6.0)
+        else:
+            zones = split_blocks_to_target(zones, feats, pair,
+                                           max_area=1.2, target=0.8)
     if REFINE:
         zones = refine_blocks(zones, feats, pair)
     zones["kind"] = "land"
@@ -3882,8 +4117,10 @@ if __name__ == "__main__":
                                     passes=2)
         zones = absorb_low_pp(zones, min_pp=0.25, max_area=6.0, passes=2)
     else:
-        zones = absorb_narrow_zones(zones, max_width=80.0, max_area=3.0,
-                                    passes=2)
+        _refcut = os.environ.get("XGB_CUT", "tiered") in ("ref", "selected")
+        zones = absorb_narrow_zones(
+            zones, max_width=40.0 if _refcut else 80.0,
+            max_area=1.0 if _refcut else 3.0, passes=2)
         zones = absorb_low_pp(zones, min_pp=0.18, max_area=1.5, passes=2)
     # Final area floor: the reference has a remarkably stable ~0.7 km2 median
     # everywhere in the city, so a 0.30 km2 floor removes the fragments that
@@ -3891,7 +4128,9 @@ if __name__ == "__main__":
     zones = absorb_small_zones(zones, min_area=0.05 if COMMERCIAL else 0.25)
     zones = absorb_odd_shapes(zones, max_area=0.60, max_pp=0.20,
                               max_aspect=6.0)
-    zones = split_oversized(zones, lines, max_area=10.0 if CITY_MODE else 1.0)
+    if not _ref_mode:
+        zones = split_oversized(zones, lines,
+                                max_area=10.0 if CITY_MODE else 1.0)
     # post-processing can leave a few square metres; close them exactly
     union = unary_union(zones.geometry.tolist())
     resid = frame.difference(union)
@@ -3911,7 +4150,8 @@ if __name__ == "__main__":
     zones["geometry"] = zones.geometry.intersection(frame)
     zones = zones[zones.geometry.notna() & ~zones.geometry.is_empty]
     zones = absorb_enclaves(zones, max_hole_km2=0.15)
-    zones = consolidate_to_count(zones, target=FINAL_TARGET or TARGET)
+    if not _ref_mode:
+        zones = consolidate_to_count(zones, target=FINAL_TARGET or TARGET)
     zones = enforce_single_component(zones)
     zones = absorb_enclaves(zones, max_hole_km2=0.15)
     zones = repair_overlaps(zones)

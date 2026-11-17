@@ -14,6 +14,8 @@ This is a normal algorithm step, not a special case:
 """
 from __future__ import annotations
 
+import os
+
 import numpy as np
 import geopandas as gpd
 import shapely
@@ -63,7 +65,7 @@ def _merge_to_k(pieces, k):
     return pieces
 
 
-def _partition_group(u, k, row, crs, lines=None):
+def _partition_group(u, k, row, crs, lines=None, allow_compact=True):
     if k <= 1:
         return [_strip_holes(u)]
     area_km2 = max(u.area / 1e6, 0.01)
@@ -83,7 +85,7 @@ def _partition_group(u, k, row, crs, lines=None):
     # still yield k zones).  Keep the OSM boundaries and compact-split only
     # the largest piece until the quota is met.
     guard = 0
-    while len(pieces) < k and guard < 12:
+    while allow_compact and len(pieces) < k and guard < 12:
         guard += 1
         big = max(pieces, key=lambda p: p.area)
         half = big.area / 1e6 / 2.0
@@ -94,7 +96,7 @@ def _partition_group(u, k, row, crs, lines=None):
     return _merge_to_k(pieces, k) if len(pieces) > k else pieces
 
 
-def repartition_rings(m, lines=None):
+def repartition_rings(m, lines=None, soft=False):
     """Remove zone-in-zone rings in a metric GeoDataFrame."""
     geoms = list(m.geometry)
     metas = m.drop(columns="geometry").to_dict("records")
@@ -146,7 +148,8 @@ def repartition_rings(m, lines=None):
         group_vals = [c for c in group_vals if c in _CLS_RANK]
         group_cls = (max(group_vals, key=lambda c: _CLS_RANK[c])
                      if group_vals else None)
-        for p in _partition_group(u, k, metas[i], m.crs, lines=lines):
+        for p in _partition_group(u, k, metas[i], m.crs, lines=lines,
+                                  allow_compact=not soft):
             nr = dict(metas[i])
             if group_cls:
                 nr["density_class"] = group_cls
@@ -512,7 +515,7 @@ def _pack_geoms(m, geoms, metas, alive):
 
 
 def finalize_units(z, lines=None, target=None, core_target=None,
-                   class_shares=None):
+                   class_shares=None, soft=None):
     """General finalize: rings, strips, per-tier area ranges, overlaps.
 
     Overlaps are repaired before the last ring pass, and the ring pass is
@@ -522,6 +525,8 @@ def finalize_units(z, lines=None, target=None, core_target=None,
     """
     if z is None or not len(z):
         return z
+    if soft is None:
+        soft = os.environ.get("XGB_SOFT_FINALIZE", "1") == "1"
     try:
         utm = z.estimate_utm_crs()
         m = z.to_crs(utm).reset_index(drop=True)
@@ -533,15 +538,16 @@ def finalize_units(z, lines=None, target=None, core_target=None,
             print(f"[finalize] input repair skipped: {exc}")
         m["geometry"] = m.geometry.map(_clean)
         m = m[m.geometry.notna() & ~m.geometry.is_empty].reset_index(drop=True)
-        m, _ng = repartition_rings(m, lines=lines)
+        m, _ng = repartition_rings(m, lines=lines, soft=soft)
         zz = m.to_crs(4326)
         zz["geometry"] = zz.geometry.map(_clean)
         zz = zz[zz.geometry.notna() & ~zz.geometry.is_empty].reset_index(drop=True)
-        zz = _merge_parallel_strips_post(zz, target=None, floor_frac=0.95)
+        if not soft:
+            zz = _merge_parallel_strips_post(zz, target=None, floor_frac=0.95)
         m = zz.to_crs(utm).reset_index(drop=True)
         m["geometry"] = m.geometry.map(_clean)
         m = m[m.geometry.notna() & ~m.geometry.is_empty].reset_index(drop=True)
-        m, _ng2 = repartition_rings(m, lines=lines)
+        m, _ng2 = repartition_rings(m, lines=lines, soft=soft)
         # Fill closed-loop holes before the area pass: filling afterwards
         # grows a zone past its class max (the leftover 16 km2 urban block).
         try:
@@ -550,11 +556,12 @@ def finalize_units(z, lines=None, target=None, core_target=None,
             print(f"[finalize] empty rings skipped: {exc}")
         m["geometry"] = m.geometry.map(_clean)
         m = m[m.geometry.notna() & ~m.geometry.is_empty].reset_index(drop=True)
-        try:
-            m = enforce_area_ranges(m, lines=lines,
-                                    class_shares=class_shares)
-        except Exception as exc:  # noqa: BLE001
-            print(f"[finalize] area ranges skipped: {exc}")
+        if not soft:
+            try:
+                m = enforce_area_ranges(m, lines=lines,
+                                        class_shares=class_shares)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[finalize] area ranges skipped: {exc}")
         m["geometry"] = m.geometry.map(_clean)
         m = m[m.geometry.notna() & ~m.geometry.is_empty].reset_index(drop=True)
         z = m.to_crs(4326)
@@ -567,17 +574,18 @@ def finalize_units(z, lines=None, target=None, core_target=None,
             z = z[z.geometry.notna() & ~z.geometry.is_empty].reset_index(drop=True)
         m = z.to_crs(utm).reset_index(drop=True)
         try:
-            m, _ng3 = repartition_rings(m, lines=lines)
+            m, _ng3 = repartition_rings(m, lines=lines, soft=soft)
             m = fill_empty_rings(m)
         except Exception as exc:  # noqa: BLE001
             print(f"[finalize] final rings skipped: {exc}")
         # Hole filling can grow a zone past its class max (a 60 km2 closed
         # loop once became a 108 km2 rural zone).  Split only, so the ring
         # cleanup above is not undone.
-        try:
-            m = enforce_area_ranges(m, lines=lines, split_only=True)
-        except Exception as exc:  # noqa: BLE001
-            print(f"[finalize] final area split skipped: {exc}")
+        if not soft:
+            try:
+                m = enforce_area_ranges(m, lines=lines, split_only=True)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[finalize] final area split skipped: {exc}")
         # A ring/repair union can leave one zone with disconnected parts.
         # Split them into their own zones (never a detached enclave) and
         # drop parts under 0.05 km2.

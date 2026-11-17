@@ -46,6 +46,8 @@
   "border_minor_frac",
   "border_local_frac",
   "border_water_frac",
+  "border_water_poly_frac",
+  "border_stream_frac",
   "border_admin6_frac",
   "border_admin8_frac",
   "border_admin10_frac",
