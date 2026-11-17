@@ -73,6 +73,16 @@ def build_lines(bbox, out_path):
         return "soft"
 
     c["klass"] = c.apply(klass, axis=1)
+    # One road, one line: collapse dual carriageways / parallel duplicates
+    # and drop roundabout loops before anything downstream sees the network.
+    try:
+        try:
+            from .road_dedupe import dedupe_roads
+        except ImportError:
+            from commercial_zoning.road_dedupe import dedupe_roads
+        c, _n_par, _n_loop = dedupe_roads(c)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[lines] road dedupe skipped: {exc}")
     # Water polygon boundaries are a major reference-scheme boundary signal
     # (lakes, ponds, reservoirs), especially in rural areas.  They were
     # absent from the line layer and are added here as their own class.
@@ -131,6 +141,18 @@ def build_lines(bbox, out_path):
                 c = pd.concat([c, n[c.columns]], ignore_index=True)
     except Exception as exc:  # noqa: BLE001
         print(f"[lines] natural vegetation edges skipped: {exc}")
+    # A road must be a zero-area line, not a corridor.  Drop service/footway/
+    # water/natural/barrier lines that run parallel inside the road corridor;
+    # the land faces then meet on the single road line (and a junction is a
+    # zero-area cross of centre lines, not an empty road square).
+    try:
+        try:
+            from .road_dedupe import remove_road_corridor_lines
+        except ImportError:
+            from commercial_zoning.road_dedupe import remove_road_corridor_lines
+        c, _n_sides = remove_road_corridor_lines(c, corridor=25.0)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[lines] corridor cleanup skipped: {exc}")
     c = c[~c.geometry.to_wkb().duplicated()].copy()
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     c.to_crs("EPSG:4326").to_file(out_path, driver="GeoJSON")

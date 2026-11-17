@@ -549,7 +549,9 @@ def _key(b, city_mode=False, variant=""):
         "XGB_NARROW_W", "XGB_NARROW_A", "XGB_MIN_ZONE_KM2",
         "XGB_RAW_LINES", "XGB_MIN_BLOCK_M2", "XGB_REF_TARGET",
         "XGB_FAST_FINAL", "XGB_FAST_QUALITY",
-        "XGB_RURAL_REL", "XGB_WANT_RURAL", "XGB_WANT_LOW"))
+        "XGB_RURAL_REL", "XGB_WANT_RURAL", "XGB_WANT_LOW",
+        "XGB_MERGE_MODE", "XGB_PROB_MIN_P", "XGB_PROB_MAX_AREA",
+        "XGB_SOFT_FINALIZE"))
     _rt = _targets_path()
     rtstamp = _rt.stat().st_mtime_ns if _rt is not None else "none"
     raw = (",".join(f"{x:.4f}" for x in b)
@@ -3325,7 +3327,7 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
         "XGB_WEAK_CUT": os.environ.get("XGB_WEAK_CUT", "1"),
         "XGB_MERGE_MODE": os.environ.get(
             "XGB_MERGE_MODE", "prob" if _cut in ("ref", "selected") else "area"),
-        "XGB_PROB_MIN_P": os.environ.get("XGB_PROB_MIN_P", "0.45"),
+        "XGB_PROB_MIN_P": os.environ.get("XGB_PROB_MIN_P", "0.70"),
         "XGB_PROB_MAX_AREA": os.environ.get("XGB_PROB_MAX_AREA", "60"),
         "XGB_TARGET": str(target),
         "XGB_REF_TARGET": "",

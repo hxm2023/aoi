@@ -1,0 +1,15 @@
+{
+ "city": "中山",
+ "ours": 523,
+ "refs": 538,
+ "ours_area_km2": 1792.3,
+ "refs_area_km2": 1748.6,
+ "pairs": 2282,
+ "iou_ref_best_mean": 0.2524,
+ "iou_greedy_1_1": 0.3163,
+ "matched": 303,
+ "matched_frac": 0.5632,
+ "iou_allref": 0.1781,
+ "area_p50_ours": 3.607,
+ "area_p50_ref": 1.882
+}
