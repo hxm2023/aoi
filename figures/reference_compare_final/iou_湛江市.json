@@ -1,0 +1,15 @@
+{
+ "city": "湛江",
+ "ours": 845,
+ "refs": 908,
+ "ours_area_km2": 12927.0,
+ "refs_area_km2": 12557.6,
+ "pairs": 4020,
+ "iou_ref_best_mean": 0.2722,
+ "iou_greedy_1_1": 0.3113,
+ "matched": 645,
+ "matched_frac": 0.7104,
+ "iou_allref": 0.2211,
+ "area_p50_ours": 9.52,
+ "area_p50_ref": 13.656
+}

@@ -1,0 +1,15 @@
+{
+ "city": "汕头",
+ "ours": 445,
+ "refs": 501,
+ "ours_area_km2": 2284.9,
+ "refs_area_km2": 2216.5,
+ "pairs": 2178,
+ "iou_ref_best_mean": 0.2799,
+ "iou_greedy_1_1": 0.3364,
+ "matched": 340,
+ "matched_frac": 0.6786,
+ "iou_allref": 0.2283,
+ "area_p50_ours": 2.342,
+ "area_p50_ref": 2.42
+}

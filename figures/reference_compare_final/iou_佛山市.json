@@ -1,0 +1,15 @@
+{
+ "city": "佛山",
+ "ours": 1097,
+ "refs": 1231,
+ "ours_area_km2": 3844.8,
+ "refs_area_km2": 3804.8,
+ "pairs": 5394,
+ "iou_ref_best_mean": 0.2832,
+ "iou_greedy_1_1": 0.3322,
+ "matched": 818,
+ "matched_frac": 0.6645,
+ "iou_allref": 0.2208,
+ "area_p50_ours": 1.957,
+ "area_p50_ref": 1.828
+}

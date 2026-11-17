@@ -1,0 +1,15 @@
+{
+ "city": "江门",
+ "ours": 669,
+ "refs": 700,
+ "ours_area_km2": 10145.3,
+ "refs_area_km2": 10022.8,
+ "pairs": 3169,
+ "iou_ref_best_mean": 0.2751,
+ "iou_greedy_1_1": 0.3283,
+ "matched": 461,
+ "matched_frac": 0.6586,
+ "iou_allref": 0.2162,
+ "area_p50_ours": 4.301,
+ "area_p50_ref": 5.048
+}

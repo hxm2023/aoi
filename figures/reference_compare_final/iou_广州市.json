@@ -1,0 +1,15 @@
+{
+ "city": "广州",
+ "ours": 1905,
+ "refs": 1942,
+ "ours_area_km2": 7289.5,
+ "refs_area_km2": 7292.8,
+ "pairs": 8785,
+ "iou_ref_best_mean": 0.2853,
+ "iou_greedy_1_1": 0.3451,
+ "matched": 1236,
+ "matched_frac": 0.6365,
+ "iou_allref": 0.2196,
+ "area_p50_ours": 1.879,
+ "area_p50_ref": 1.414
+}
