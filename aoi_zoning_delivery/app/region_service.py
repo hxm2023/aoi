@@ -71,6 +71,7 @@ def reference_targets():
 
 
 _AREA_BUDGET = None
+_LAST_DENSITY_QUOTAS = {}
 
 
 def _budget_path():
@@ -217,6 +218,10 @@ def _density_target(b, lines_path, frame=None, scope=None, city_mode=False):
     for c, a in class_area.items():
         mean = _budget_mean(c, budget, remote_density=remote_med)
         total += a / max(mean, 0.05)
+    global _LAST_DENSITY_QUOTAS
+    _LAST_DENSITY_QUOTAS = {
+        c: int(round(a / max(_budget_mean(c, budget, remote_med), 0.05)))
+        for c, a in class_area.items()}
     target = _clamp(total)
     print("[budget] road-density target {} | ".format(target)
           + " ".join(f"{c}:{class_area[c] / max(_budget_mean(c, budget, remote_med), 0.05):.0f}区"
@@ -1838,8 +1843,9 @@ def generate_admin_region(bbox, force=False, scope="city", admin_name=None,
                                        scope=scope,
                                        city_mode=(scope == "city"))
             if _dtarget:
-                z8 = _enforce_zone_count(z8, _dtarget, lines=lines,
-                                         work_area_km2=_zarea)
+                z8 = _enforce_zone_count(
+                    z8, _dtarget, lines=lines, work_area_km2=_zarea,
+                    core_target=_LAST_DENSITY_QUOTAS.get("core"))
                 z8["geometry"] = z8.geometry.map(_poly)
                 z8 = z8[z8.geometry.notna() & ~z8.geometry.is_empty]
                 z8 = z8.reset_index(drop=True)
@@ -2814,7 +2820,7 @@ def _split_class(z, mask, quota, cls, lines, budget):
 
 
 def _enforce_zone_count(z, target, lines=None, work_area_km2=None,
-                        max_zone_km2=None, quotas=None):
+                        max_zone_km2=None, quotas=None, core_target=None):
     """Bring a finished unit to its zone-count target.
 
     With reference quotas, each density class is first grown/shrunk to its
@@ -2890,6 +2896,14 @@ def _enforce_zone_count(z, target, lines=None, work_area_km2=None,
     except Exception as exc:  # noqa: BLE001
         print(f"[strip-cluster] skipped: {exc}")
     z = _merge_parallel_strips_post(z, target=target, floor_frac=0.85)
+    # General finalize: remove rings, densify core zones along OSM roads,
+    # fill closed-loop holes, repair overlaps and drop fragments.  This is
+    # part of the algorithm for every unit, not an offline special case.
+    try:
+        from .ring_fix import finalize_units as _fin
+    except ImportError:
+        from commercial_zoning.ring_fix import finalize_units as _fin
+    z = _fin(z, lines=lines, target=target, core_target=core_target)
     if int(z.shape[0]) > int(target * 1.12):
         z = _cap_zone_count(z, target, lines=lines, max_ratio=1.12)
     z["zone"] = np.arange(1, len(z) + 1)
@@ -3667,10 +3681,14 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
                 except Exception:  # noqa: BLE001
                     _maxz = _quotas = None
             try:
+                _core_target = ((_quotas or {}).get("core")
+                                if _quotas else None)
+                if _core_target is None:
+                    _core_target = _LAST_DENSITY_QUOTAS.get("core")
                 z = _enforce_zone_count(
                     z, target, lines=lines_gdf,
                     work_area_km2=work_area, max_zone_km2=_maxz,
-                    quotas=_quotas)
+                    quotas=_quotas, core_target=_core_target)
             except Exception as _ctexc:  # noqa: BLE001
                 print(f"[count-target] skipped: {_ctexc}")
         # The pipeline computed the attribute card before quality splitting
