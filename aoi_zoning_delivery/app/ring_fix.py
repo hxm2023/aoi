@@ -96,6 +96,163 @@ def _partition_group(u, k, row, crs, lines=None, allow_compact=True):
     return _merge_to_k(pieces, k) if len(pieces) > k else pieces
 
 
+def _nholes(g):
+    try:
+        return sum(len(p.interiors) for p in shapely.get_parts(g)
+                   if p.geom_type == "Polygon")
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def merge_thin_zones(m, max_aspect=5.0, max_width=20.0, max_area=1.0):
+    """Merge remaining thin/sliver zones into their best neighbour.
+
+    Splitting an elongated zone can leave a very long, narrow road face.  A
+    thin zone is not fixed by splitting again (that only makes more slivers);
+    merge it whole into the neighbour with the longest shared boundary.
+    """
+    geoms = list(m.geometry)
+    metas = m.drop(columns="geometry").to_dict("records")
+    tree = shapely.STRtree(geoms)
+    alive = np.ones(len(geoms), dtype=bool)
+    changed = 0
+    order = sorted(range(len(geoms)), key=lambda i: geoms[i].area)
+    for i in order:
+        if not alive[i]:
+            continue
+        g = geoms[i]
+        a = g.area / 1e6
+        if a >= max_area or g.is_empty:
+            continue
+        w = 2.0 * g.area / max(g.length, 1e-9)
+        if (a >= 0.10 and _aspect(g) <= max_aspect
+                and w >= max_width):
+            continue
+        best = None
+        for j in tree.query(g, predicate="intersects"):
+            j = int(j)
+            if j == i or not alive[j]:
+                continue
+            try:
+                shared = g.boundary.intersection(geoms[j].boundary).length
+            except Exception:  # noqa: BLE001
+                continue
+            if shared <= 1.0:
+                continue
+            if best is None or shared > best[0]:
+                best = (shared, j)
+        if best is None:
+            continue
+        j = best[1]
+        try:
+            u = shapely.union_all([geoms[j], g])
+        except Exception:  # noqa: BLE001
+            continue
+        if u.geom_type != "Polygon" or not u.is_valid:
+            continue
+        if _nholes(u) > max(_nholes(geoms[j]), _nholes(g)):
+            continue
+        geoms[j] = u
+        alive[i] = False
+        changed += 1
+    if not changed:
+        return m, 0
+    rows = [dict(metas[k], geometry=geoms[k])
+            for k in range(len(geoms)) if alive[k]]
+    return gpd.GeoDataFrame(rows, geometry="geometry", crs=m.crs).reset_index(
+        drop=True), changed
+
+
+def _aspect(g):
+    try:
+        r = g.minimum_rotated_rectangle
+        if r.geom_type != "Polygon":
+            return 1.0
+        c = list(r.exterior.coords)
+        l1 = np.hypot(c[1][0] - c[0][0], c[1][1] - c[0][1])
+        l2 = np.hypot(c[2][0] - c[1][0], c[2][1] - c[1][1])
+        return float(max(l1, l2) / max(min(l1, l2), 1e-9))
+    except Exception:  # noqa: BLE001
+        return 1.0
+
+
+def split_elongated(m, lines=None, min_aspect=3.0, min_area=0.5):
+    """Split visibly elongated final zones along OSM lines (compact fallback).
+
+    Point 1 of the review: a long zone or a long part of a zone reads as an
+    artificial strip.  Prefer internal road/water lines; where none exist,
+    cut across the long axis into compact pieces (never a grid).
+    """
+    rows = []
+    changed = 0
+    for _, r in m.iterrows():
+        g = r.geometry
+        a = g.area / 1e6
+        if g is None or g.is_empty or a < min_area or _aspect(g) <= min_aspect:
+            rows.append(dict(r))
+            continue
+        asp = _aspect(g)
+        one = gpd.GeoDataFrame(
+            {"kind": ["land"], "geometry": [g]}, geometry="geometry",
+            crs=m.crs)
+        pieces = []
+        if lines is not None and len(lines):
+            try:
+                sp = split_with_roads(one, lines, max_area=max(0.15, a / 2.0),
+                                      min_part=0.05, strict=False)
+                pieces = [p for p in sp.geometry
+                          if p is not None and not p.is_empty]
+            except Exception:  # noqa: BLE001
+                pieces = []
+        if len(pieces) < 2:
+            try:
+                target = max(0.12, a / max(2, int(round(asp / 2.0))))
+                sp = _split_oversized(one, target, lines=None,
+                                      cell_km2=target)
+                pieces = [p for p in sp.geometry
+                          if p is not None and not p.is_empty]
+            except Exception:  # noqa: BLE001
+                pieces = []
+        if len(pieces) < 2:
+            rows.append(dict(r))
+            continue
+        # A road face can itself be a long strip; compact-split those
+        # remaining elongated pieces so no long zone survives the pass.
+        _fin = []
+        for p in pieces:
+            if p.area / 1e6 < 0.03:
+                continue
+            _pa = _aspect(p)
+            if p.area / 1e6 >= 0.3 and _pa > 3.0:
+                _t = max(0.10, p.area / 1e6 / max(2, int(round(_pa / 2))))
+                try:
+                    _one2 = gpd.GeoDataFrame(
+                        {"kind": ["land"], "geometry": [p]},
+                        geometry="geometry", crs=m.crs)
+                    _sp2 = _split_oversized(_one2, _t, lines=None,
+                                            cell_km2=_t)
+                    _pcs = [q for q in _sp2.geometry
+                            if q is not None and not q.is_empty
+                            and q.area / 1e6 >= 0.03]
+                except Exception:  # noqa: BLE001
+                    _pcs = []
+                if (len(_pcs) >= 2
+                        and max(_aspect(q) for q in _pcs) < _pa):
+                    _fin.extend(_pcs)
+                    continue
+            _fin.append(p)
+        pieces = _fin
+        for p in pieces:
+            nr = dict(r)
+            nr["geometry"] = p
+            rows.append(nr)
+        changed += 1
+    if not changed:
+        return m, 0
+    out = gpd.GeoDataFrame(rows, geometry="geometry", crs=m.crs)
+    return out.reset_index(drop=True), changed
+
+
 def repartition_rings(m, lines=None, soft=False):
     """Remove zone-in-zone rings in a metric GeoDataFrame."""
     geoms = list(m.geometry)
@@ -564,6 +721,17 @@ def finalize_units(z, lines=None, target=None, core_target=None,
                 print(f"[finalize] area ranges skipped: {exc}")
         m["geometry"] = m.geometry.map(_clean)
         m = m[m.geometry.notna() & ~m.geometry.is_empty].reset_index(drop=True)
+        if soft:
+            try:
+                m, _ne = split_elongated(m, lines=lines)
+                if _ne:
+                    print(f"[finalize] split {_ne} elongated zones",
+                          flush=True)
+                m["geometry"] = m.geometry.map(_clean)
+                m = m[m.geometry.notna()
+                      & ~m.geometry.is_empty].reset_index(drop=True)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[finalize] elongated split skipped: {exc}")
         z = m.to_crs(4326)
         for _ in range(2):
             try:
@@ -578,6 +746,26 @@ def finalize_units(z, lines=None, target=None, core_target=None,
             m = fill_empty_rings(m)
         except Exception as exc:  # noqa: BLE001
             print(f"[finalize] final rings skipped: {exc}")
+        if soft:
+            try:
+                m, _ne2 = split_elongated(m, lines=lines)
+                if _ne2:
+                    print(f"[finalize] final-split {_ne2} elongated zones",
+                          flush=True)
+                m["geometry"] = m.geometry.map(_clean)
+                m = m[m.geometry.notna()
+                      & ~m.geometry.is_empty].reset_index(drop=True)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[finalize] final elongated split skipped: {exc}")
+            try:
+                m, _nm = merge_thin_zones(m)
+                if _nm:
+                    print(f"[finalize] merged {_nm} thin zones", flush=True)
+                m["geometry"] = m.geometry.map(_clean)
+                m = m[m.geometry.notna()
+                      & ~m.geometry.is_empty].reset_index(drop=True)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[finalize] thin merge skipped: {exc}")
         # Hole filling can grow a zone past its class max (a 60 km2 closed
         # loop once became a 108 km2 rural zone).  Split only, so the ring
         # cleanup above is not undone.

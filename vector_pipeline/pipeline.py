@@ -1498,7 +1498,8 @@ def block_features(blocks, lines, mp):
     b["urban_score"] = (0.45 * rk(b["poi_density"])
                         + 0.30 * rk(b["building_density"])
                         + 0.25 * rk(b["lu_built"]))
-    b.to_file(OUT / "xgb_block_features.geojson", driver="GeoJSON")
+    b.to_crs("EPSG:4326").to_file(
+        OUT / "xgb_block_features.geojson", driver="GeoJSON")
     return b
 
 
@@ -1781,6 +1782,9 @@ def _merge_from_pairs(blocks, pair, target=None):
     # area-weighted urban score travels with the union, so the size cap can
     # follow density instead of a crude radius from the city centre.
     urb = blocks["urban_score"].fillna(0.0).astype(float).values.copy()
+    rd = (blocks["road_density"].fillna(0.0).astype(float).values.copy()
+          if "road_density" in blocks.columns
+          else np.zeros(len(blocks)))
     distw = blocks["dist_center_km"].fillna(99.0).astype(float).values.copy()
     adj = [dict() for _ in range(n)]
     pdict = {}
@@ -1882,13 +1886,18 @@ def _merge_from_pairs(blocks, pair, target=None):
         edges.sort(key=lambda x: -x[0])
         min_p = float(os.environ.get("XGB_PROB_MIN_P", "0.45"))
         max_a = float(os.environ.get("XGB_PROB_MAX_AREA", "60"))
+        _core_cap = float(os.environ.get("XGB_PROB_CORE_MAX_AREA", "2.5"))
+        _urban_cap = float(os.environ.get("XGB_PROB_URBAN_MAX_AREA", "4.0"))
         for w, raw_p, a, b, mf, wf in edges:
             if raw_p < min_p:
                 break
             ra, rb = find(a), find(b)
             if ra == rb:
                 continue
-            if area[ra] + area[rb] > max_a:
+            _rd = 0.5 * (rd[ra] + rd[rb])
+            _cap = (_core_cap if _rd >= 6.39
+                    else (_urban_cap if _rd >= 2.33 else max_a))
+            if area[ra] + area[rb] > _cap:
                 continue
             try:
                 border = shapely.intersection(
@@ -2034,10 +2043,23 @@ def _merge_from_pairs(blocks, pair, target=None):
         print(f"[merge] WARNING: candidate/target ratio {ratio:.1f} < 1.5")
     blocks = blocks.copy()
     blocks["zone"] = [find(i) for i in range(n)]
-    land = blocks[blocks["kind"].eq("land")].dissolve(by="zone", as_index=False)
+    _land = blocks[blocks["kind"].eq("land")].copy()
+    _cols = [c for c in ("poi_density", "building_density", "road_density",
+                         "urban_score", "dist_center_km", "lu_built")
+             if c in _land.columns]
+    _geom = _land.dissolve(by="zone", as_index=True).geometry
+    if _cols:
+        _agg = _land.drop(columns="geometry").groupby("zone")[_cols].mean()
+        _agg["geometry"] = _geom.reindex(_agg.index)
+        land = gpd.GeoDataFrame(_agg, geometry="geometry", crs=CRS)
+    else:
+        land = gpd.GeoDataFrame({"geometry": _geom}, geometry="geometry",
+                                crs=CRS)
+    land = land.reset_index()
     # Lakes are appended by main with ids above the land ids; returning them
     # here would duplicate them and collide with block-index zone ids.
-    return gpd.GeoDataFrame(land[["zone", "geometry"]], crs=CRS)
+    out_cols = ["zone", "geometry"] + [c for c in _cols if c in land.columns]
+    return gpd.GeoDataFrame(land[out_cols], crs=CRS)
 
 
 
@@ -4367,6 +4389,40 @@ if __name__ == "__main__":
         out = _o.to_crs("EPSG:4326")
         out["geometry"] = out.geometry.map(_polygon_only)
         out = out[out.geometry.notna() & ~out.geometry.is_empty].copy()
+    # Recompute per-zone attribute cards from the block features by area
+    # overlap.  The water/absorb passes rebuild the zone layer with only
+    # zone+geometry, which left every delivered zone carrying one block's
+    # densities (or a constant).  The map/panel needs per-zone values.
+    try:
+        _ac = [c for c in ("poi_density", "building_density", "road_density",
+                           "urban_score", "lu_built")
+               if c in feats.columns]
+        if _ac:
+            _oz = out.to_crs(CRS)
+            _li = _oz.index[_oz["kind"].eq("land")]
+            _zf = _oz.loc[_li, ["geometry"]].copy()
+            _zf["_zid"] = np.arange(len(_zf))
+            _ff = feats[["geometry"] + _ac].to_crs(CRS)
+            _ov = gpd.overlay(_zf, _ff, how="intersection",
+                              keep_geom_type=True)
+            if len(_ov):
+                _ov["_a"] = _ov.area
+                for c in _ac:
+                    _ov[c] = _ov[c] * _ov["_a"]
+                _g = _ov.groupby("_zid")[_ac + ["_a"]].sum()
+                for c in _ac:
+                    _g[c] = _g[c] / _g["_a"].clip(lower=1e-9)
+                _g = _g[_ac].reindex(np.arange(len(_zf)))
+                for c in _ac:
+                    if c in out.columns:
+                        out = out.drop(columns=c)
+                _vals = _g.to_numpy()
+                for k, c in enumerate(_ac):
+                    out.loc[_li, c] = _vals[:, k]
+                print("[attrs] per-zone densities from block overlap",
+                      flush=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[attrs] overlap skipped: {exc}", flush=True)
     out.to_file(OUT / "xgb_zones.geojson", driver="GeoJSON")
     # Browser display copy: 5 m simplification keeps the file small but the
     # label anchor (representative point) unchanged.  It must be derived from

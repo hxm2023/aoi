@@ -3414,6 +3414,39 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
 
     threading.Thread(target=_tick_q, daemon=True).start()
     z = gpd.read_file(zones_path)
+    # Recompute the panel attribute cards from the block features by area
+    # overlap.  Water/absorb passes rebuild zones with zone+geometry only;
+    # without this the delivered zones carry one block's densities.
+    try:
+        _bp = d / "xgb_block_features.geojson"
+        _ac = ["poi_density", "building_density", "road_density",
+               "urban_score", "lu_built"]
+        if _bp.exists() and len(z) and all(c in z.columns for c in _ac):
+            _fb = gpd.read_file(_bp)
+            if _fb.crs is None:
+                _fb = _fb.set_crs(4326)
+            _u = z.estimate_utm_crs()
+            _zz = z.to_crs(_u)
+            _ff = _fb.to_crs(_u)
+            _zf = _zz[["geometry"]].copy()
+            _zf["_zid"] = np.arange(len(_zf))
+            _ov = gpd.overlay(_zf, _ff[["geometry"] + _ac],
+                              how="intersection", keep_geom_type=True)
+            if len(_ov):
+                _ov["_a"] = _ov.area
+                for c in _ac:
+                    _ov[c] = _ov[c] * _ov["_a"]
+                _g = _ov.groupby("_zid")[_ac + ["_a"]].sum()
+                for c in _ac:
+                    _g[c] = _g[c] / _g["_a"].clip(lower=1e-9)
+                _g = _g[_ac].reindex(np.arange(len(_zf)))
+                _vals = _g.to_numpy()
+                for k, c in enumerate(_ac):
+                    z[c] = _vals[:, k]
+                print("[attrs] zone density cards from block overlap",
+                      flush=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[attrs] skipped: {exc}")
     qs = bad = None
     engine = "road"
     try:
