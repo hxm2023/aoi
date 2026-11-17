@@ -3140,7 +3140,7 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
                     target_count=None, quick=False):
     _report(progress, 2, "准备区域")
     _ref = _target_meta(admin_name) if admin_name else None
-    if scope == "county" and admin_name and not force and not quick:
+    if scope in ("county", "city", "province") and admin_name and not force:
         up = _cached_unit_file(admin_name)
         if up is not None:
             try:
