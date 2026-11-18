@@ -214,7 +214,7 @@ def _nholes(g):
         return 0
 
 
-def merge_thin_zones(m, max_aspect=5.0, max_width=20.0, max_area=1.0):
+def merge_thin_zones(m, max_aspect=4.5, max_width=20.0, max_area=1.5):
     """Merge remaining thin/sliver zones into their best neighbour.
 
     Splitting an elongated zone can leave a very long, narrow road face.  A
@@ -350,7 +350,7 @@ def _split_by_line_path(p, lm, tree, max_parts=2, min_share=0.12,
         return None
     lines.sort(key=lambda q: -q.length)
     for ln in lines[:24]:
-        for ext in (0.0, 60.0, 150.0, 300.0, 600.0, 1000.0):
+        for ext in (0.0, 60.0, 150.0, 300.0, 450.0):
             cutter = _extend_line(ln, ext)
             try:
                 parts = [q for q in sops.split(p, cutter).geoms

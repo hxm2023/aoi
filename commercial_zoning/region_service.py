@@ -1449,7 +1449,7 @@ def _refresh_block_attrs(z, block_path):
     return z
 
 
-def _densify_urban(z, lines, class_shares, core_max=1.2, urban_max=2.0):
+def _densify_urban(z, lines, class_shares, core_max=0.7, urban_max=1.2):
     """Split oversized core/urban zones along the real OSM line network.
 
     The internal network is polygonized and merged down to two pieces (three
@@ -1489,11 +1489,11 @@ def _densify_urban(z, lines, class_shares, core_max=1.2, urban_max=2.0):
         elif cls == "urban":
             limit = urban_max
         elif cls == "town":
-            limit = 3.0
+            limit = 2.0
         else:
             rows.append(dict(r))
             continue
-        if area <= limit * 1.4:
+        if area <= limit * 1.2:
             rows.append(dict(r))
             continue
         parts = _cut_by_network(
@@ -1526,7 +1526,7 @@ def _densify_urban(z, lines, class_shares, core_max=1.2, urban_max=2.0):
     return out.reset_index(drop=True)
 
 
-def _merge_extreme_elongated(z, min_aspect=4.5):
+def _merge_extreme_elongated(z, min_aspect=4.0):
     """Merge a zone that is still extremely long into its best neighbour.
 
     Line-only splitting can leave a 10:1+ ribbon when the network has no
@@ -1596,7 +1596,7 @@ def _merge_extreme_elongated(z, min_aspect=4.5):
     return out.reset_index(drop=True), changed
 
 
-def _consolidate_rural(z, class_shares, lines=None, min_area_km2=4.0,
+def _consolidate_rural(z, class_shares, lines=None, min_area_km2=5.0,
                        max_area_km2=60.0, passes=2):
     """Soften rural fragmentation by merging undersized rural zones.
 
@@ -1698,7 +1698,8 @@ def _consolidate_rural(z, class_shares, lines=None, min_area_km2=4.0,
     return z, total_changed
 
 
-def _absorb_small_facets(z, lines=None, min_km2=0.20, passes=2):
+def _absorb_small_facets(z, lines=None, min_km2=0.15, passes=2,
+                         class_shares=None):
     """Merge tiny standalone zones (often a single facility parcel) into a
     neighbour.  No tiny parcel is allowed to survive as its own zone.
 
@@ -1723,6 +1724,15 @@ def _absorb_small_facets(z, lines=None, min_km2=0.20, passes=2):
                 major_tree = shapely.STRtree(np.asarray(gg, dtype=object))
         except Exception:  # noqa: BLE001
             major_tree = None
+    labels = None
+    if class_shares:
+        try:
+            from .ring_fix import _rank_classes
+        except ImportError:
+            from commercial_zoning.ring_fix import _rank_classes
+        labels = _rank_classes(
+            z.to_crs(z.estimate_utm_crs()).reset_index(drop=True),
+            class_shares)
     total = 0
     for _ in range(passes):
         utm = z.estimate_utm_crs()
@@ -1736,7 +1746,11 @@ def _absorb_small_facets(z, lines=None, min_km2=0.20, passes=2):
             if not alive[i]:
                 continue
             g = geoms[i]
-            if g is None or g.is_empty or g.area / 1e6 >= min_km2:
+            _lim = min_km2
+            if labels is not None:
+                _c = labels[i] if i < len(labels) else "other"
+                _lim = max(_lim, {"rural": 2.0, "town": 0.5}.get(_c, 0.0))
+            if g is None or g.is_empty or g.area / 1e6 >= _lim:
                 continue
             best = None
             for j in tree.query(g, predicate="intersects"):
@@ -1756,7 +1770,7 @@ def _absorb_small_facets(z, lines=None, min_km2=0.20, passes=2):
                     _, d = major_tree.query_nearest(
                         np.asarray(pts, dtype=object), return_distance=True,
                         all_matches=False)
-                    if np.mean(np.asarray(d) <= 20.0) > 0.50:
+                    if np.mean(np.asarray(d) <= 20.0) > 0.80:
                         continue
                 u = shapely.union_all([geoms[j], g])
                 if u.geom_type != "Polygon" or not u.is_valid:
@@ -1992,7 +2006,7 @@ def _simple_finalize(z, lines=None, class_shares=None, min_split_km2=1.5,
             from commercial_zoning.ring_fix import _rank_classes
         labels = _rank_classes(m, class_shares)
     cls_max = {"core": 2.0, "urban": 3.5, "town": 5.0, "rural": 60.0}
-    cls_min = {"core": 0.30, "urban": 0.40, "town": 0.50, "rural": 1.50}
+    cls_min = {"core": 0.50, "urban": 0.60, "town": 0.80, "rural": 1.50}
     if lines_m is not None and len(lines_m):
         lm = lines_m
         tree2 = shapely.STRtree(np.asarray(lm.geometry.values,
@@ -4479,9 +4493,11 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
                 # densities before choosing which zones to densify.
                 z = _refresh_block_attrs(z, d / "xgb_block_features.geojson")
                 z = _densify_urban(z, lines_gdf, _cs)
+                z = _densify_urban(z, lines_gdf, _cs)
                 z, _ = _merge_extreme_elongated(z)
                 z, _ = _consolidate_rural(z, _cs, lines_gdf)
-                z, _ = _absorb_small_facets(z, lines_gdf, min_km2=0.15)
+                z, _ = _absorb_small_facets(z, lines_gdf, min_km2=0.15,
+                                                    class_shares=_class_area_shares(admin_name))
                 # Final zero-zone-in-zone guarantee: any hole still present
                 # after densify/merge is repaired before the attributes and
                 # smoothing are written.
@@ -4504,7 +4520,8 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
                               flush=True)
                 except Exception as _rex:  # noqa: BLE001
                     print(f"[rings] final check skipped: {_rex}")
-                z, _ = _absorb_small_facets(z, lines_gdf, min_km2=0.15)
+                z, _ = _absorb_small_facets(z, lines_gdf, min_km2=0.15,
+                                                    class_shares=_class_area_shares(admin_name))
                 z = _refresh_block_attrs(
                     z, d / "xgb_block_features.geojson")
         except Exception as _udexc:  # noqa: BLE001
@@ -4541,7 +4558,7 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
         # border identical (coverage_simplify only removes vertices; the
         # 10-15 m tolerance keeps the line on the OSM road centreline).
         try:
-            _tol = float(os.environ.get("XGB_FINAL_SMOOTH_TOL", "12"))
+            _tol = float(os.environ.get("XGB_FINAL_SMOOTH_TOL", "24"))
             if _tol > 0 and len(z):
                 _um = z.to_crs(z.estimate_utm_crs())
                 _um["geometry"] = _um.geometry.map(
@@ -4563,6 +4580,35 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
                       flush=True)
         except Exception as _ssexc:  # noqa: BLE001
             print(f"[smooth] final simplify skipped: {_ssexc}")
+        try:
+            z, _ = _merge_extreme_elongated(z, 4.0)
+        except Exception as _eme:  # noqa: BLE001
+            print(f"[elongated-merge] post-smooth skipped: {_eme}")
+        # Final single-component guarantee after the smoothing/merge passes.
+        try:
+            _um = z.to_crs(z.estimate_utm_crs())
+            _rows = []
+            _ch = False
+            for _, _r in _um.iterrows():
+                _ps = [q for q in shapely.get_parts(_r.geometry)
+                       if q.geom_type == "Polygon" and q.area > 1.0]
+                if len(_ps) <= 1:
+                    _rows.append(dict(_r))
+                else:
+                    _ch = True
+                    for _q in _ps:
+                        _nr = dict(_r); _nr["geometry"] = _q
+                        _rows.append(_nr)
+            if _ch:
+                z = _um.__class__(_rows, geometry="geometry",
+                                  crs=_um.crs).to_crs(4326).reset_index(
+                                      drop=True)
+                print("[component] final multipart split", flush=True)
+                z, _ = _absorb_small_facets(
+                    z, lines_gdf, min_km2=0.15,
+                    class_shares=_class_area_shares(admin_name))
+        except Exception as _mpe:  # noqa: BLE001
+            print(f"[component] final multipart skipped: {_mpe}")
         # The pipeline computed the attribute card before quality splitting
         # and merging; splits duplicated the parent's area/pp onto every
         # shard and merges left the host's old values.  Refresh the two pure
