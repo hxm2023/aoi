@@ -3818,6 +3818,39 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
             lambda g: (_strip_holes(_poly(shapely.make_valid(g)))
                        if g is not None else None))
         z = z[z.geometry.notna() & ~z.geometry.is_empty].reset_index(drop=True)
+        # Final attribute refresh: the structural finalize above can rebuild
+        # zones from one parent row, which would leave every delivered zone
+        # carrying the same density card.  Recompute the panel fields from
+        # the block features on the geometry that is actually written.
+        try:
+            _bp2 = d / "xgb_block_features.geojson"
+            _ac2 = ["poi_density", "building_density", "road_density",
+                    "urban_score", "lu_built"]
+            if _bp2.exists() and len(z) and all(c in z.columns for c in _ac2):
+                _fb2 = gpd.read_file(_bp2)
+                if _fb2.crs is None:
+                    _fb2 = _fb2.set_crs(4326)
+                _u2 = z.estimate_utm_crs()
+                _zz2 = z.to_crs(_u2)
+                _ff2 = _fb2.to_crs(_u2)
+                _zf2 = _zz2[["geometry"]].copy()
+                _zf2["_zid"] = np.arange(len(_zf2))
+                _ov2 = gpd.overlay(_zf2, _ff2[["geometry"] + _ac2],
+                                   how="intersection", keep_geom_type=True)
+                if len(_ov2):
+                    _ov2["_a"] = _ov2.area
+                    for c in _ac2:
+                        _ov2[c] = _ov2[c] * _ov2["_a"]
+                    _g2 = _ov2.groupby("_zid")[_ac2 + ["_a"]].sum()
+                    for c in _ac2:
+                        _g2[c] = _g2[c] / _g2["_a"].clip(lower=1e-9)
+                    _g2 = _g2[_ac2].reindex(np.arange(len(_zf2)))
+                    _v2 = _g2.to_numpy()
+                    for k, c in enumerate(_ac2):
+                        z[c] = _v2[:, k]
+                    print("[attrs] final per-zone cards refreshed", flush=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[attrs] final refresh skipped: {exc}")
         z = assign_colors(z)
         _report(progress, 95, "写出分区结果")
         z.to_file(zones_path, driver="GeoJSON")
