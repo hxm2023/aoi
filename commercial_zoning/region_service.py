@@ -1387,6 +1387,675 @@ def _split_elongated_zones(z, max_aspect=2.8, min_area=0.8,
     return out.to_crs(4326)
 
 
+
+def _refresh_block_attrs(z, block_path):
+    """Area-weighted panel attributes from the block feature layer.
+
+    Water/absorb/finalize passes rebuild zones from one parent row, so the
+    delivered zone layer can end up with one constant density card.  This
+    rewrites POI/building/road density, urban score and built share on the
+    geometry that is currently in ``z``.
+    """
+    try:
+        if not block_path.exists() or not len(z):
+            return z
+        ac = ["poi_density", "building_density", "road_density",
+              "urban_score", "lu_built"]
+        if not all(c in z.columns for c in ac):
+            return z
+        fb = gpd.read_file(block_path)
+        if fb.crs is None:
+            fb = fb.set_crs(4326)
+        u = z.estimate_utm_crs()
+        zz = z.to_crs(u)
+        ff = fb.to_crs(u)
+        zf = zz[["geometry"]].copy()
+        zf["_zid"] = np.arange(len(zf))
+        ov = gpd.overlay(zf, ff[["geometry"] + ac], how="intersection",
+                         keep_geom_type=True)
+        if not len(ov):
+            return z
+        ov["_a"] = ov.area
+        # Area share of genuinely dense blocks: used to pick where urban
+        # densification may split (a large rural block has few of these).
+        try:
+            _hi = ((ov["road_density"].astype(float) >= 5.0)
+                   | (ov["poi_density"].astype(float) >= 5.0)
+                   | (ov["building_density"].astype(float) >= 20.0))
+            ov["_hi"] = ov["_a"] * _hi.astype(float)
+        except Exception:  # noqa: BLE001
+            ov["_hi"] = 0.0
+        for c in ac:
+            ov[c] = ov[c] * ov["_a"]
+        g = ov.groupby("_zid")[ac + ["_a"]].sum()
+        for c in ac:
+            g[c] = g[c] / g["_a"].clip(lower=1e-9)
+        g = g[ac].reindex(np.arange(len(zf)))
+        vals = g.to_numpy()
+        for k, c in enumerate(ac):
+            z[c] = vals[:, k]
+        try:
+            _gh = ov.groupby("_zid")["_hi"].sum().reindex(
+                np.arange(len(zf))).fillna(0.0)
+            _ga = ov.groupby("_zid")["_a"].sum().reindex(
+                np.arange(len(zf))).fillna(0.0)
+            z["urban_share"] = (_gh / _ga.clip(lower=1e-9)).to_numpy()
+        except Exception:  # noqa: BLE001
+            z["urban_share"] = 0.0
+        print("[attrs] per-zone cards refreshed from block overlap",
+              flush=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[attrs] refresh skipped: {exc}")
+    return z
+
+
+def _densify_urban(z, lines, class_shares, core_max=1.2, urban_max=2.0):
+    """Split oversized core/urban zones along the real OSM line network.
+
+    The internal network is polygonized and merged down to two pieces (three
+    for very large zones); every new border is real road/water/admin/landuse
+    linework.  A zone the network cannot divide into balanced pieces is left
+    alone -- no invented straight cut.
+    """
+    if not len(z) or lines is None or not len(lines) or not class_shares:
+        return z
+    try:
+        from .ring_fix import _rank_classes, _cut_by_network, _fold_into
+    except ImportError:
+        from commercial_zoning.ring_fix import (_rank_classes, _cut_by_network,
+                                                _fold_into)
+    crs0 = z.crs
+    try:
+        utm = z.estimate_utm_crs()
+    except Exception:  # noqa: BLE001
+        return z
+    m = z.to_crs(utm).reset_index(drop=True)
+    labels = _rank_classes(m, class_shares)
+    if labels is None:
+        return z
+    lm = lines.to_crs(utm)
+    tree = shapely.STRtree(np.asarray(lm.geometry.values, dtype=object))
+    rows = []
+    changed = 0
+    for i, r in m.iterrows():
+        g = r.geometry
+        if g is None or g.is_empty:
+            rows.append(dict(r))
+            continue
+        area = g.area / 1e6
+        cls = labels[i]
+        if cls == "core":
+            limit = core_max
+        elif cls == "urban":
+            limit = urban_max
+        elif cls == "town":
+            limit = 3.0
+        else:
+            rows.append(dict(r))
+            continue
+        if area <= limit * 1.4:
+            rows.append(dict(r))
+            continue
+        parts = _cut_by_network(
+            g, lm, tree, max_parts=3 if area > limit * 3.2 else 2)
+        if not parts:
+            rows.append(dict(r))
+            continue
+        try:
+            big = [p for p in parts if p.area / 1e6 >= 0.15]
+            small = [p for p in parts if p.area / 1e6 < 0.15]
+            if len(big) >= 2:
+                parts = _fold_into(big, small) if small else big
+            else:
+                rows.append(dict(r))
+                continue
+        except Exception:  # noqa: BLE001
+            pass
+        for p in parts:
+            nr = dict(r)
+            nr["geometry"] = p
+            rows.append(nr)
+        changed += 1
+    if not changed:
+        return z
+    out = gpd.GeoDataFrame(rows, geometry="geometry", crs=utm)
+    out = out.to_crs(crs0)
+    out["zone"] = np.arange(1, len(out) + 1)
+    print(f"[urban-densify] split {changed} oversized core/urban zones "
+          f"along OSM lines", flush=True)
+    return out.reset_index(drop=True)
+
+
+def _merge_extreme_elongated(z, min_aspect=4.5):
+    """Merge a zone that is still extremely long into its best neighbour.
+
+    Line-only splitting can leave a 10:1+ ribbon when the network has no
+    balanced cut.  Merging it back is better than keeping a visual strip or
+    inventing a straight cut.  Only accepted when the union stays compact
+    enough and does not create a hole.
+    """
+    if not len(z):
+        return z, 0
+    try:
+        from .ring_fix import _aspect, _nholes
+    except ImportError:
+        from commercial_zoning.ring_fix import _aspect, _nholes
+    try:
+        utm = z.estimate_utm_crs()
+    except Exception:  # noqa: BLE001
+        return z, 0
+    m = z.to_crs(utm).reset_index(drop=True)
+    metas = m.drop(columns="geometry").to_dict("records")
+    geoms = list(m.geometry)
+    tree = shapely.STRtree(np.asarray(geoms, dtype=object))
+    alive = np.ones(len(geoms), dtype=bool)
+    changed = 0
+    for i in range(len(geoms)):
+        if not alive[i]:
+            continue
+        g = geoms[i]
+        if g is None or g.is_empty or _aspect(g) <= min_aspect:
+            continue
+        best = None
+        for j in tree.query(g, predicate="intersects"):
+            j = int(j)
+            if j == i or not alive[j]:
+                continue
+            try:
+                shared = g.boundary.intersection(geoms[j].boundary).length
+            except Exception:  # noqa: BLE001
+                continue
+            if shared <= 20.0:
+                continue
+            u = shapely.union_all([geoms[j], g])
+            if u.geom_type != "Polygon" or not u.is_valid:
+                continue
+            if _nholes(u) > max(_nholes(geoms[j]), _nholes(g)):
+                continue
+            if u.area / 1e6 > 80.0:
+                continue
+            a_u = _aspect(u)
+            if a_u >= _aspect(geoms[j]) * 0.95:
+                continue
+            score = shared / max(a_u, 1.0)
+            if best is None or score > best[0]:
+                best = (score, j, u)
+        if best is None:
+            continue
+        _, j, u = best
+        geoms[j] = u
+        alive[i] = False
+        changed += 1
+    if not changed:
+        return z, 0
+    rows = [dict(metas[k], geometry=geoms[k])
+            for k in range(len(geoms)) if alive[k]]
+    out = gpd.GeoDataFrame(rows, geometry="geometry", crs=utm).to_crs(4326)
+    out["zone"] = np.arange(1, len(out) + 1)
+    print(f"[elongated-merge] merged {changed} extreme ribbons", flush=True)
+    return out.reset_index(drop=True), changed
+
+
+def _consolidate_rural(z, class_shares, lines=None, min_area_km2=4.0,
+                       max_area_km2=60.0, passes=2):
+    """Soften rural fragmentation by merging undersized rural zones.
+
+    No count target: a rural zone below 3 km2 joins the adjacent rural/town
+    zone with the longest shared border, unless that border is dominated by a
+    major road/river or the union becomes a hole/an extreme ribbon.
+    """
+    if not len(z) or not class_shares:
+        return z, 0
+    try:
+        from .ring_fix import _rank_classes, _aspect, _nholes
+    except ImportError:
+        from commercial_zoning.ring_fix import (_rank_classes, _aspect,
+                                                _nholes)
+    major_tree = None
+    if lines is not None and len(lines):
+        try:
+            utm0 = z.to_crs(z.estimate_utm_crs())
+            lm = lines.to_crs(utm0.crs)
+            _mk = lm[lm["klass"].isin(["major", "river", "water_poly"])]
+            gg = [q for q in _mk.geometry
+                  if q is not None and not q.is_empty]
+            if gg:
+                major_tree = shapely.STRtree(np.asarray(gg, dtype=object))
+        except Exception:  # noqa: BLE001
+            major_tree = None
+    total_changed = 0
+    for _ in range(passes):
+        utm = z.estimate_utm_crs()
+        m = z.to_crs(utm).reset_index(drop=True)
+        labels = _rank_classes(m, class_shares)
+        if labels is None:
+            break
+        metas = m.drop(columns="geometry").to_dict("records")
+        geoms = list(m.geometry)
+        tree = shapely.STRtree(np.asarray(geoms, dtype=object))
+        alive = np.ones(len(geoms), dtype=bool)
+        changed = 0
+        for i in range(len(geoms)):
+            if not alive[i] or labels[i] != "rural":
+                continue
+            g = geoms[i]
+            if g is None or g.is_empty or g.area / 1e6 >= min_area_km2:
+                continue
+            best = None
+            for j in tree.query(g, predicate="intersects"):
+                j = int(j)
+                if j == i or not alive[j] or labels[j] not in ("rural", "town"):
+                    continue
+                try:
+                    shared = g.boundary.intersection(geoms[j].boundary)
+                    sl = shared.length
+                except Exception:  # noqa: BLE001
+                    continue
+                if sl <= 20.0:
+                    continue
+                if major_tree is not None:
+                    pts = [shared.interpolate(k / 5.0, normalized=True)
+                           for k in range(6)]
+                    idx, d = major_tree.query_nearest(
+                        np.asarray(pts, dtype=object), return_distance=True,
+                        all_matches=False)
+                    if np.mean(np.asarray(d) <= 20.0) > 0.30:
+                        continue
+                u = shapely.union_all([geoms[j], g])
+                if u.geom_type != "Polygon" or not u.is_valid:
+                    continue
+                if _nholes(u) > max(_nholes(geoms[j]), _nholes(g)):
+                    continue
+                if u.area / 1e6 > max_area_km2:
+                    continue
+                if _aspect(u) > 6.0:
+                    continue
+                pu = 4 * math.pi * u.area / max(u.length ** 2, 1e-9)
+                pj = 4 * math.pi * geoms[j].area / max(
+                    geoms[j].length ** 2, 1e-9)
+                if pu < pj - 0.02:
+                    continue
+                score = sl + 1000.0 * (pu - pj)
+                if best is None or score > best[0]:
+                    best = (score, j, u)
+            if best is None:
+                continue
+            _, j, u = best
+            geoms[j] = u
+            alive[i] = False
+            changed += 1
+        if not changed:
+            break
+        total_changed += changed
+        rows = [dict(metas[k], geometry=geoms[k])
+                for k in range(len(geoms)) if alive[k]]
+        z = (gpd.GeoDataFrame(rows, geometry="geometry", crs=utm)
+             .to_crs(4326).reset_index(drop=True))
+        z["zone"] = np.arange(1, len(z) + 1)
+    if total_changed:
+        print(f"[rural-merge] merged {total_changed} undersized rural zones",
+              flush=True)
+    return z, total_changed
+
+
+def _absorb_small_facets(z, lines=None, min_km2=0.20, passes=2):
+    """Merge tiny standalone zones (often a single facility parcel) into a
+    neighbour.  No tiny parcel is allowed to survive as its own zone.
+
+    The shared border may be a major road or river only up to 50% of its
+    length; otherwise the parcel is a genuine separate unit and stays.
+    """
+    if not len(z):
+        return z, 0
+    try:
+        from .ring_fix import _aspect, _nholes
+    except ImportError:
+        from commercial_zoning.ring_fix import _aspect, _nholes
+    major_tree = None
+    if lines is not None and len(lines):
+        try:
+            _u0 = z.to_crs(z.estimate_utm_crs())
+            lm = lines.to_crs(_u0.crs)
+            _mk = lm[lm["klass"].isin(["major", "river", "water_poly"])]
+            gg = [q for q in _mk.geometry
+                  if q is not None and not q.is_empty]
+            if gg:
+                major_tree = shapely.STRtree(np.asarray(gg, dtype=object))
+        except Exception:  # noqa: BLE001
+            major_tree = None
+    total = 0
+    for _ in range(passes):
+        utm = z.estimate_utm_crs()
+        m = z.to_crs(utm).reset_index(drop=True)
+        geoms = list(m.geometry)
+        metas = m.drop(columns="geometry").to_dict("records")
+        tree = shapely.STRtree(np.asarray(geoms, dtype=object))
+        alive = np.ones(len(geoms), dtype=bool)
+        changed = 0
+        for i in range(len(geoms)):
+            if not alive[i]:
+                continue
+            g = geoms[i]
+            if g is None or g.is_empty or g.area / 1e6 >= min_km2:
+                continue
+            best = None
+            for j in tree.query(g, predicate="intersects"):
+                j = int(j)
+                if j == i or not alive[j]:
+                    continue
+                try:
+                    shared = g.boundary.intersection(geoms[j].boundary)
+                    sl = shared.length
+                except Exception:  # noqa: BLE001
+                    continue
+                if sl <= 10.0:
+                    continue
+                if major_tree is not None:
+                    pts = [shared.interpolate(k / 5.0, normalized=True)
+                           for k in range(6)]
+                    _, d = major_tree.query_nearest(
+                        np.asarray(pts, dtype=object), return_distance=True,
+                        all_matches=False)
+                    if np.mean(np.asarray(d) <= 20.0) > 0.50:
+                        continue
+                u = shapely.union_all([geoms[j], g])
+                if u.geom_type != "Polygon" or not u.is_valid:
+                    continue
+                if _nholes(u) > max(_nholes(geoms[j]), _nholes(g)):
+                    continue
+                if _aspect(u) > 6.0:
+                    continue
+                if best is None or sl > best[0]:
+                    best = (sl, j, u)
+            if best is None:
+                continue
+            _, j, u = best
+            geoms[j] = u
+            alive[i] = False
+            changed += 1
+        if not changed:
+            break
+        total += changed
+        rows = [dict(metas[k], geometry=geoms[k])
+                for k in range(len(geoms)) if alive[k]]
+        z = (gpd.GeoDataFrame(rows, geometry="geometry", crs=utm)
+             .to_crs(4326).reset_index(drop=True))
+        z["zone"] = np.arange(1, len(z) + 1)
+    if total:
+        print(f"[small-merge] absorbed {total} tiny zones", flush=True)
+    return z, total
+
+
+def _finalize_count_preserving(z, lines=None):
+    """Count-preserving finalize for large units.
+
+    The old finalize recut every ring group; when a group could not be cut
+    into k real-line pieces it collapsed into fewer zones, which is why the
+    pipeline output (445/610) ended up at 254-392.  This version:
+      * removes overlaps without deleting valid zones;
+      * fills holes that contain no zone;
+      * merges only tiny enclosed zones (<=0.02 km2) into their host;
+      * recuts larger enclave groups along real lines, allowing a compact
+        fallback ONLY inside that group, and logs how many zones remain;
+      * then splits elongated zones along real lines and merges thin ones.
+    """
+    try:
+        from .ring_fix import (_clean, split_elongated, merge_thin_zones,
+                               _partition_group, _nholes, _aspect)
+    except ImportError:
+        from commercial_zoning.ring_fix import (_clean, split_elongated,
+                                                merge_thin_zones,
+                                                _partition_group, _nholes,
+                                                _aspect)
+    from .quality import repair_overlaps_zones
+    if z is None or not len(z):
+        return z
+    try:
+        utm = z.estimate_utm_crs()
+    except Exception:  # noqa: BLE001
+        return z
+    m = z.to_crs(utm).reset_index(drop=True)
+    m["geometry"] = m.geometry.map(_clean)
+    m = m[m.geometry.notna() & ~m.geometry.is_empty].reset_index(drop=True)
+    print(f"[finalize2] input {len(m)}", flush=True)
+    try:
+        m = repair_overlaps_zones(m, min_area=0.01)
+    except Exception:  # noqa: BLE001
+        pass
+    print(f"[finalize2] after overlap repair {len(m)}", flush=True)
+    lines_m = None
+    if lines is not None and len(lines):
+        try:
+            lines_m = lines.to_crs(utm)
+        except Exception:  # noqa: BLE001
+            lines_m = None
+    geoms = list(m.geometry)
+    metas = m.drop(columns="geometry").to_dict("records")
+    tree = shapely.STRtree(np.asarray(geoms, dtype=object))
+    handled = set()
+    rows = []
+    for i, g in enumerate(geoms):
+        if i in handled or g is None or g.is_empty:
+            continue
+        holes = [shapely.Polygon(r)
+                 for part in shapely.get_parts(g)
+                 if part.geom_type == "Polygon"
+                 for r in part.interiors]
+        if not holes:
+            continue
+        enclosed = set()
+        empty_holes = []
+        for h in holes:
+            inside = set()
+            for j in tree.query(h, predicate="intersects"):
+                j = int(j)
+                if j == i or j in handled:
+                    continue
+                try:
+                    inter = h.intersection(geoms[j]).area
+                except Exception:  # noqa: BLE001
+                    continue
+                if inter >= 0.60 * max(geoms[j].area, 1e-9):
+                    inside.add(j)
+            if inside:
+                enclosed.update(inside)
+            else:
+                empty_holes.append(h)
+        if not enclosed:
+            u = shapely.union_all([g] + empty_holes)
+            rows.append(dict(metas[i], geometry=_poly(u)))
+            handled.add(i)
+            continue
+        small = [j for j in enclosed if geoms[j].area / 1e6 <= 0.02]
+        large = [j for j in enclosed if j not in small]
+        if not large:
+            u = shapely.union_all([g] + [geoms[j] for j in enclosed]
+                                  + empty_holes)
+            rows.append(dict(metas[i], geometry=_poly(u)))
+            handled.add(i)
+            handled.update(enclosed)
+            continue
+        k = 1 + len(large)
+        try:
+            u = shapely.union_all([g] + [geoms[j] for j in enclosed])
+            parts = _partition_group(u, k, metas[i], utm, lines=lines_m,
+                                     allow_compact=True)
+        except Exception:  # noqa: BLE001
+            parts = [g]
+        for q in parts:
+            rows.append(dict(metas[i], geometry=_poly(q)))
+        handled.add(i)
+        handled.update(enclosed)
+    for i, g in enumerate(geoms):
+        if i not in handled:
+            rows.append(dict(metas[i], geometry=g))
+    m = gpd.GeoDataFrame(rows, geometry="geometry", crs=utm)
+    m = m[m.geometry.notna() & ~m.geometry.is_empty].reset_index(drop=True)
+    print(f"[finalize2] after hole handling {len(m)}", flush=True)
+    try:
+        m, _ = split_elongated(m, lines=lines_m)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[finalize2] elongated split skipped: {exc}")
+    print(f"[finalize2] after elongated {len(m)}", flush=True)
+    try:
+        m, _ = merge_thin_zones(m)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[finalize2] thin merge skipped: {exc}")
+    print(f"[finalize2] after thin merge {len(m)}", flush=True)
+    return m.to_crs(4326).reset_index(drop=True)
+
+
+def _simple_finalize(z, lines=None, class_shares=None, min_split_km2=1.5,
+                     min_piece_km2=0.15):
+    """Robust count-preserving finalize that avoids the fragile ring recut.
+
+    * overlaps: subtract only the intersection, never delete a valid zone;
+    * holes: empty holes are filled; a hole that contains zones is resolved
+      by merging those enclosed zones into the host (guaranteed zero rings,
+      costs only the rare true enclaves);
+    * oversized zones are split along real OSM lines (network faces or the
+      longest internal road), never by a straight invented cut;
+    * small pieces (<0.15 km2) are folded back; tiny zones (<0.20 km2) are
+      absorbed; extreme ribbons (>4.5:1) are merged into a neighbour.
+    """
+    try:
+        from .ring_fix import (_clean, _cut_by_network, _nholes, _aspect)
+    except ImportError:
+        from commercial_zoning.ring_fix import (_clean, _cut_by_network,
+                                               _nholes, _aspect)
+    from .quality import repair_overlaps_zones
+    if z is None or not len(z):
+        return z
+    try:
+        utm = z.estimate_utm_crs()
+    except Exception:  # noqa: BLE001
+        return z
+    m = z.to_crs(utm).reset_index(drop=True)
+    m["geometry"] = m.geometry.map(_clean)
+    m = m[m.geometry.notna() & ~m.geometry.is_empty].reset_index(drop=True)
+    print(f"[simple] input {len(m)}", flush=True)
+    try:
+        m = repair_overlaps_zones(m, min_area=0.01)
+    except Exception:  # noqa: BLE001
+        pass
+    print(f"[simple] after overlap {len(m)}", flush=True)
+    lines_m = None
+    if lines is not None and len(lines):
+        try:
+            lines_m = lines.to_crs(utm)
+        except Exception:  # noqa: BLE001
+            lines_m = None
+    # holes -> merge enclosed zones into the host (zero rings, no recut)
+    geoms = list(m.geometry)
+    metas = m.drop(columns="geometry").to_dict("records")
+    tree = shapely.STRtree(np.asarray(geoms, dtype=object))
+    consumed = set()
+    rows = []
+    for i, g in enumerate(geoms):
+        if i in consumed or g is None or g.is_empty:
+            continue
+        holes = [shapely.Polygon(r)
+                 for part in shapely.get_parts(g)
+                 if part.geom_type == "Polygon"
+                 for r in part.interiors]
+        if not holes:
+            continue
+        encl = set()
+        for h in holes:
+            for j in tree.query(h, predicate="intersects"):
+                j = int(j)
+                if j == i or j in consumed:
+                    continue
+                try:
+                    if h.intersection(geoms[j]).area >= 0.60 * max(
+                            geoms[j].area, 1e-9):
+                        encl.add(j)
+                except Exception:  # noqa: BLE001
+                    continue
+        u = shapely.union_all([g] + [geoms[j] for j in encl] + holes)
+        rows.append(dict(metas[i], geometry=_poly(u)))
+        consumed.add(i)
+        consumed.update(encl)
+    for i, g in enumerate(geoms):
+        if i not in consumed:
+            rows.append(dict(metas[i], geometry=g))
+    m = gpd.GeoDataFrame(rows, geometry="geometry", crs=utm)
+    m = m[m.geometry.notna() & ~m.geometry.is_empty].reset_index(drop=True)
+    print(f"[simple] after holes {len(m)}", flush=True)
+    # Hierarchical scene area thresholds: split zones above the class max
+    # along real lines; no count target and no random threshold.
+    labels = None
+    if class_shares:
+        try:
+            from .ring_fix import _rank_classes
+        except ImportError:
+            from commercial_zoning.ring_fix import _rank_classes
+        labels = _rank_classes(m, class_shares)
+    cls_max = {"core": 2.0, "urban": 3.5, "town": 5.0, "rural": 60.0}
+    cls_min = {"core": 0.30, "urban": 0.40, "town": 0.50, "rural": 1.50}
+    if lines_m is not None and len(lines_m):
+        lm = lines_m
+        tree2 = shapely.STRtree(np.asarray(lm.geometry.values,
+                                           dtype=object))
+        out = []
+        changed = 0
+        for i, r in m.iterrows():
+            g = r.geometry
+            if g is None or g.is_empty:
+                out.append(dict(r))
+                continue
+            cls = labels[i] if labels is not None else "other"
+            split_at = cls_max.get(cls, 8.0)
+            piece_min = max(cls_min.get(cls, 0.20), min_piece_km2)
+            if g.area / 1e6 <= max(min_split_km2, split_at):
+                out.append(dict(r))
+                continue
+            _n = int(g.area / 1e6 // max(split_at, 0.5)) + 1
+            parts = _cut_by_network(
+                g, lm, tree2,
+                max_parts=min(4, max(2, _n)))
+            if not parts:
+                out.append(dict(r))
+                continue
+            big = [q for q in parts if q.area / 1e6 >= piece_min]
+            small = [q for q in parts if q.area / 1e6 < piece_min]
+            if len(big) < 2:
+                out.append(dict(r))
+                continue
+            try:
+                from .ring_fix import _fold_into
+                if small:
+                    big = _fold_into(big, small)
+            except Exception:  # noqa: BLE001
+                pass
+            for q in big:
+                nr = dict(r)
+                nr["geometry"] = q
+                out.append(nr)
+            changed += 1
+        if changed:
+            m = gpd.GeoDataFrame(out, geometry="geometry", crs=utm)
+            m = m[m.geometry.notna() & ~m.geometry.is_empty].reset_index(
+                drop=True)
+        print(f"[simple] after line splits {len(m)} (+{changed})",
+              flush=True)
+    # absorb tiny and extreme ribbons
+    try:
+        m, _ = _merge_extreme_elongated(m.to_crs(4326))
+        m = m.to_crs(utm)
+        print(f"[simple] after ribbon merge {len(m)}", flush=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[simple] ribbon merge skipped: {exc}")
+    try:
+        m, _ = _absorb_small_facets(m.to_crs(4326), lines,
+                                    min_km2=0.15)
+        m = m.to_crs(utm)
+        print(f"[simple] after small absorb {len(m)}", flush=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[simple] small absorb skipped: {exc}")
+    return m.to_crs(4326).reset_index(drop=True)
+
+
 def _fill_holes_and_enclaves(z, max_enclave_km2=2.5):
     """Remove holes from the final partition.
 
@@ -3792,12 +4461,108 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
         if target and (ref_target or city_mode
                        or scope in ("city", "county")):
             try:
-                z = _enforce_zone_count(z, target, lines=lines_gdf,
-                                        work_area_km2=work_area,
-                                        class_shares=_class_area_shares(
-                                            admin_name))
+                z = _enforce_zone_count(
+                    z, target, lines=lines_gdf,
+                    work_area_km2=work_area,
+                    class_shares=_class_area_shares(admin_name))
             except Exception as _ctexc:  # noqa: BLE001
                 print(f"[area-target] skipped: {_ctexc}")
+        # Core/urban zones that survived the probability merge can still be
+        # several times the reference cell size.  Split the oversized ones
+        # once (twice above 3.2x) along an internal OSM line; no artificial
+        # cuts and no chains of small teeth.
+        try:
+            _cs = _class_area_shares(admin_name)
+            if _cs:
+                # The finalize above may have collapsed the cards onto one
+                # parent row; refresh them so class ranking sees real
+                # densities before choosing which zones to densify.
+                z = _refresh_block_attrs(z, d / "xgb_block_features.geojson")
+                z = _densify_urban(z, lines_gdf, _cs)
+                z, _ = _merge_extreme_elongated(z)
+                z, _ = _consolidate_rural(z, _cs, lines_gdf)
+                z, _ = _absorb_small_facets(z, lines_gdf, min_km2=0.15)
+                # Final zero-zone-in-zone guarantee: any hole still present
+                # after densify/merge is repaired before the attributes and
+                # smoothing are written.
+                try:
+                    _um = z.to_crs(z.estimate_utm_crs())
+                    _nr = sum(len(p.interiors)
+                              for g in _um.geometry
+                              for p in shapely.get_parts(g)
+                              if p.geom_type == "Polygon")
+                    if _nr:
+                        from .ring_fix import (repartition_rings,
+                                               fill_empty_rings)
+                        _lm = (lines_gdf.to_crs(_um.crs)
+                               if lines_gdf is not None else None)
+                        _um, _ = repartition_rings(_um, lines=_lm, soft=True)
+                        _um = fill_empty_rings(_um)
+                        z = _um.to_crs(4326).reset_index(drop=True)
+                        z["zone"] = np.arange(1, len(z) + 1)
+                        print(f"[rings] final repartition ({_nr} holes)",
+                              flush=True)
+                except Exception as _rex:  # noqa: BLE001
+                    print(f"[rings] final check skipped: {_rex}")
+                z, _ = _absorb_small_facets(z, lines_gdf, min_km2=0.15)
+                z = _refresh_block_attrs(
+                    z, d / "xgb_block_features.geojson")
+        except Exception as _udexc:  # noqa: BLE001
+            print(f"[urban-densify] skipped: {_udexc}")
+        # Densify/split can leave a detached part; make every zone single-
+        # connected before smoothing so the delivered layer has no multiparts.
+        try:
+            _um = z.to_crs(z.estimate_utm_crs())
+            _rows = []
+            _changed = False
+            for _, _r in _um.iterrows():
+                # 50000 m2 (not square degrees): the zone layer is in a
+                # metre CRS here so the 0.05 km2 floor is comparable.
+                _parts = [p for p in shapely.get_parts(_r.geometry)
+                          if p.geom_type == "Polygon" and p.area >= 50000.0]
+                if not _parts:
+                    _parts = [max(shapely.get_parts(_r.geometry),
+                                  key=lambda q: q.area)]
+                if len(_parts) <= 1:
+                    _rows.append(dict(_r))
+                else:
+                    _changed = True
+                    for _p in _parts:
+                        _nr = dict(_r)
+                        _nr["geometry"] = _p
+                        _rows.append(_nr)
+            if _changed:
+                z = (gpd.GeoDataFrame(_rows, geometry="geometry", crs=_um.crs)
+                     .to_crs(4326).reset_index(drop=True))
+                print("[component] densify multipart split", flush=True)
+        except Exception as _mpexc:  # noqa: BLE001
+            print(f"[component] densify multipart split skipped: {_mpexc}")
+        # Smooth small-amplitude boundary zigzags while keeping every shared
+        # border identical (coverage_simplify only removes vertices; the
+        # 10-15 m tolerance keeps the line on the OSM road centreline).
+        try:
+            _tol = float(os.environ.get("XGB_FINAL_SMOOTH_TOL", "12"))
+            if _tol > 0 and len(z):
+                _um = z.to_crs(z.estimate_utm_crs())
+                _um["geometry"] = _um.geometry.map(
+                    lambda g: (_poly(shapely.make_valid(g))
+                               if g is not None else None))
+                _um = _um[_um.geometry.notna() & ~_um.geometry.is_empty]
+                try:
+                    _sg = shapely.coverage_simplify(
+                        np.asarray(_um.geometry.values, dtype=object),
+                        tolerance=_tol)
+                except Exception:
+                    _sg = _um.geometry.simplify(
+                        _tol, preserve_topology=True)
+                _um["geometry"] = _sg
+                _um = _um[_um.geometry.notna() & ~_um.geometry.is_empty]
+                z = _um.to_crs(4326).reset_index(drop=True)
+                z["geometry"] = z.geometry.map(_poly)
+                print(f"[smooth] final coverage_simplify tol {_tol:g} m",
+                      flush=True)
+        except Exception as _ssexc:  # noqa: BLE001
+            print(f"[smooth] final simplify skipped: {_ssexc}")
         # The pipeline computed the attribute card before quality splitting
         # and merging; splits duplicated the parent's area/pp onto every
         # shard and merges left the host's old values.  Refresh the two pure
@@ -3818,39 +4583,8 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
             lambda g: (_strip_holes(_poly(shapely.make_valid(g)))
                        if g is not None else None))
         z = z[z.geometry.notna() & ~z.geometry.is_empty].reset_index(drop=True)
-        # Final attribute refresh: the structural finalize above can rebuild
-        # zones from one parent row, which would leave every delivered zone
-        # carrying the same density card.  Recompute the panel fields from
-        # the block features on the geometry that is actually written.
-        try:
-            _bp2 = d / "xgb_block_features.geojson"
-            _ac2 = ["poi_density", "building_density", "road_density",
-                    "urban_score", "lu_built"]
-            if _bp2.exists() and len(z) and all(c in z.columns for c in _ac2):
-                _fb2 = gpd.read_file(_bp2)
-                if _fb2.crs is None:
-                    _fb2 = _fb2.set_crs(4326)
-                _u2 = z.estimate_utm_crs()
-                _zz2 = z.to_crs(_u2)
-                _ff2 = _fb2.to_crs(_u2)
-                _zf2 = _zz2[["geometry"]].copy()
-                _zf2["_zid"] = np.arange(len(_zf2))
-                _ov2 = gpd.overlay(_zf2, _ff2[["geometry"] + _ac2],
-                                   how="intersection", keep_geom_type=True)
-                if len(_ov2):
-                    _ov2["_a"] = _ov2.area
-                    for c in _ac2:
-                        _ov2[c] = _ov2[c] * _ov2["_a"]
-                    _g2 = _ov2.groupby("_zid")[_ac2 + ["_a"]].sum()
-                    for c in _ac2:
-                        _g2[c] = _g2[c] / _g2["_a"].clip(lower=1e-9)
-                    _g2 = _g2[_ac2].reindex(np.arange(len(_zf2)))
-                    _v2 = _g2.to_numpy()
-                    for k, c in enumerate(_ac2):
-                        z[c] = _v2[:, k]
-                    print("[attrs] final per-zone cards refreshed", flush=True)
-        except Exception as exc:  # noqa: BLE001
-            print(f"[attrs] final refresh skipped: {exc}")
+        # Final attribute refresh on the geometry that is actually written.
+        z = _refresh_block_attrs(z, d / "xgb_block_features.geojson")
         z = assign_colors(z)
         _report(progress, 95, "写出分区结果")
         z.to_file(zones_path, driver="GeoJSON")

@@ -826,6 +826,110 @@ def _merge_hole_enclaves(blocks):
     return out
 
 
+def _extra_cut_parts(mp, admin, frame):
+    """Auxiliary explainable cuts: L8 outside built-up, large functional
+    landuse/parks/campuses/hospitals, and very large building complexes.
+
+    These are deliberately weak: admin L8 is removed inside the built-up mask
+    (the user's rule: L8 not in the core), and every polygon must be >= 5 ha
+    so a single building or a small lot cannot fragment a zone.
+    """
+    parts = []
+
+    def add_boundaries(gdf, clip=None):
+        for geom in gdf.geometry:
+            if geom is None or geom.is_empty:
+                continue
+            try:
+                b = geom.boundary
+            except Exception:  # noqa: BLE001
+                continue
+            h = b.intersection(clip if clip is not None else frame)
+            for q in shapely.get_parts(h):
+                if (q.geom_type in ("LineString", "MultiLineString")
+                        and q.length >= 100.0):
+                    parts.append(q)
+
+    built_classes = {
+        "residential", "commercial", "retail", "industrial",
+        "construction", "military", "education", "religious",
+        "recreation_ground", "cemetery"}
+    lu_all = mp[mp["landuse"].astype("string").isin(built_classes)].copy()
+    lu_all = lu_all[lu_all.geometry.notna() & ~lu_all.geometry.is_empty]
+    built_u = None
+    if len(lu_all):
+        try:
+            built_u = unary_union(lu_all.geometry.tolist()).buffer(300.0)
+        except Exception:  # noqa: BLE001
+            built_u = None
+    a8 = admin[admin["admin_level"].astype("string").eq("8")].copy()
+    if built_u is not None and len(a8):
+        a8 = a8[~a8.intersects(built_u)]
+    add_boundaries(a8)
+
+    func = {"industrial", "commercial", "retail", "construction",
+            "military", "education", "religious", "recreation_ground",
+            "cemetery"}
+    lu = mp[mp["landuse"].astype("string").isin(func)].copy()
+    lu = lu[lu.geometry.notna() & ~lu.geometry.is_empty]
+    _lu_min = float(os.environ.get("XGB_EXTRA_LU_MIN_KM2", "0.05")) * 1e6
+    lu = lu[lu.area >= _lu_min]
+    add_boundaries(lu)
+
+    leis_classes = {"park", "garden", "nature_reserve", "sports_centre",
+                    "pitch", "playground", "golf_course", "stadium"}
+    amen_classes = {"university", "college", "school", "hospital"}
+    _leis = (mp["leisure"] if "leisure" in mp.columns
+             else pd.Series("", index=mp.index, dtype="string"))
+    _amen = (mp["amenity"] if "amenity" in mp.columns
+             else pd.Series("", index=mp.index, dtype="string"))
+    leis = mp[_leis.astype("string").isin(leis_classes)
+              | _amen.astype("string").isin(amen_classes)].copy()
+    leis = leis[leis.geometry.notna() & ~leis.geometry.is_empty]
+    leis = leis[leis.area >= 0.05e6]
+    add_boundaries(leis)
+
+    bld = mp[mp["building"].notna()].copy()
+    bld = bld[bld.geometry.notna() & ~bld.geometry.is_empty]
+    bld = bld[bld.area >= 0.05e6]
+    add_boundaries(bld)
+
+    print(f"[cuts-extra] admin8 {len(a8)}, lu {len(lu)}, "
+          f"leisure/amenity {len(leis)}, big buildings {len(bld)}",
+          flush=True)
+    return parts
+
+
+def _protect_urban(z):
+    """Compact urban blocks that should not be absorbed away.
+
+    0.15-0.60 km2, width >= 20 m, urban_score >= 0.60.  These are normal
+    built-up cells; the old absorption passes removed them because they were
+    small/narrow, which is the main reason the built-up area ended up coarse.
+    """
+    try:
+        if "urban_score" not in z.columns:
+            return z.iloc[0:0], z
+        m = z.to_crs(CRS) if z.crs is not None else z
+        a = m.area / 1e6
+        w = 2.0 * m.area / np.maximum(m.length, 1e-9)
+        us = pd.to_numeric(z["urban_score"], errors="coerce").fillna(0.0)
+        mask = (us.to_numpy() >= 0.60) & (a.to_numpy() >= 0.15) \
+            & (a.to_numpy() <= 0.60) & (w.to_numpy() >= 20.0)
+        return z[mask], z[~mask]
+    except Exception:  # noqa: BLE001
+        return z.iloc[0:0], z
+
+
+def _absorb_keep_urban(z, fn, **kw):
+    prot, rest = _protect_urban(z)
+    out = fn(rest, **kw)
+    if len(prot) == 0:
+        return out
+    return gpd.GeoDataFrame(pd.concat([prot, out], ignore_index=True),
+                            geometry="geometry", crs=z.crs)
+
+
 def build_blocks(lines):
     t0 = time.time()
     mp = read_osm("multipolygons").to_crs(CRS)
@@ -1072,6 +1176,8 @@ def build_blocks(lines):
                     parts.append(p)
         print(f"[cuts] rural natural {len(nat)} polygons, "
               f"streams {len(streams)} ways")
+    if ref_mode and os.environ.get("XGB_EXTRA_CUT", "0") == "1":
+        parts.extend(_extra_cut_parts(mp, admin, frame))
     # Outer frame: without this ring, polygonize cannot close the coastal and
     # outer faces, and the seal step would fill a huge area with a few zones.
     for p in shapely.get_parts(frame.boundary):
@@ -1785,6 +1891,14 @@ def _merge_from_pairs(blocks, pair, target=None):
     rd = (blocks["road_density"].fillna(0.0).astype(float).values.copy()
           if "road_density" in blocks.columns
           else np.zeros(len(blocks)))
+    uscore = (blocks["urban_score"].fillna(0.0).astype(float).values.copy()
+              if "urban_score" in blocks.columns
+              else np.zeros(len(blocks)))
+    poi = (blocks["poi_density"].fillna(0.0).astype(float).values.copy()
+           if "poi_density" in blocks.columns else np.zeros(len(blocks)))
+    bld = (blocks["building_density"].fillna(0.0).astype(float).values.copy()
+           if "building_density" in blocks.columns
+           else np.zeros(len(blocks)))
     distw = blocks["dist_center_km"].fillna(99.0).astype(float).values.copy()
     adj = [dict() for _ in range(n)]
     pdict = {}
@@ -4132,7 +4246,8 @@ if __name__ == "__main__":
     if not resid.is_empty and resid.area > 1e-6:
         print(f"[seal] residual gap {resid.area/1e6:.6f} km2 -> nearest zones")
         zones = attach_water(zones, resid, frame, min_area=0.0)
-    zones = absorb_small_zones(zones, min_area=0.06 if COMMERCIAL else 0.12)
+    zones = _absorb_keep_urban(
+        zones, absorb_small_zones, min_area=0.06 if COMMERCIAL else 0.12)
     zones = enforce_single_component(zones)
     if CITY_MODE:
         zones = absorb_narrow_zones(zones, max_width=100.0, max_area=8.0,
@@ -4140,14 +4255,18 @@ if __name__ == "__main__":
         zones = absorb_low_pp(zones, min_pp=0.25, max_area=6.0, passes=2)
     else:
         _refcut = os.environ.get("XGB_CUT", "tiered") in ("ref", "selected")
-        zones = absorb_narrow_zones(
-            zones, max_width=40.0 if _refcut else 80.0,
+        zones = _absorb_keep_urban(
+            zones, absorb_narrow_zones,
+            max_width=40.0 if _refcut else 80.0,
             max_area=1.0 if _refcut else 3.0, passes=2)
-        zones = absorb_low_pp(zones, min_pp=0.18, max_area=1.5, passes=2)
+        zones = _absorb_keep_urban(
+            zones, absorb_low_pp, min_pp=0.18, max_area=1.5, passes=2)
     # Final area floor: the reference has a remarkably stable ~0.7 km2 median
     # everywhere in the city, so a 0.30 km2 floor removes the fragments that
     # made the map look noisy without touching the real zones.
-    zones = absorb_small_zones(zones, min_area=0.05 if COMMERCIAL else 0.25)
+    zones = _absorb_keep_urban(
+        zones, absorb_small_zones,
+        min_area=0.05 if COMMERCIAL else 0.25)
     zones = absorb_odd_shapes(zones, max_area=0.60, max_pp=0.20,
                               max_aspect=6.0)
     if not _ref_mode:

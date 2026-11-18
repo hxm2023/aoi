@@ -14,6 +14,7 @@ This is a normal algorithm step, not a special case:
 """
 from __future__ import annotations
 
+import math
 import os
 
 import numpy as np
@@ -65,6 +66,80 @@ def _merge_to_k(pieces, k):
     return pieces
 
 
+def _bisect(g):
+    """Guaranteed two-piece split of one polygon in a metre CRS.
+
+    Used only inside a ring group when both road cuts and compact splits
+    failed.  Tries a perpendicular bisection first, then a two-cell Voronoi
+    as a last resort.  Never returns a piece smaller than a few square metres
+    if a balanced cut is possible.
+    """
+    import shapely.ops as sops
+    try:
+        g = _poly(shapely.make_valid(g))
+    except Exception:  # noqa: BLE001
+        return None
+    if g is None or g.is_empty:
+        return None
+    if g.geom_type == "MultiPolygon":
+        parts = [q for q in shapely.get_parts(g)
+                 if q.geom_type == "Polygon" and not q.is_empty]
+        if not parts:
+            return None
+        parts.sort(key=lambda q: -q.area)
+        g = parts[0]
+    if g.geom_type != "Polygon":
+        return None
+    L = 0.0
+    ux, uy = 1.0, 0.0
+    try:
+        r = g.minimum_rotated_rectangle
+        cs = list(r.exterior.coords)[:4]
+        sides = [math.dist(cs[i], cs[(i + 1) % 4]) for i in range(4)]
+        k = max(range(4), key=lambda i: sides[i])
+        x0, y0 = cs[k]
+        x1, y1 = cs[(k + 1) % 4]
+        L = math.hypot(x1 - x0, y1 - y0)
+        if L > 0:
+            ux, uy = (x1 - x0) / L, (y1 - y0) / L
+    except Exception:  # noqa: BLE001
+        pass
+    c = g.centroid
+    if L > 0:
+        dx, dy = -uy, ux
+        ext = max(L, 1000.0) * 2.0
+        cutter = shapely.LineString([
+            (c.x - dx * ext, c.y - dy * ext),
+            (c.x + dx * ext, c.y + dy * ext)])
+        try:
+            parts = [q for q in sops.split(g, cutter).geoms
+                     if q.geom_type == "Polygon" and q.area > 1.0]
+        except Exception:  # noqa: BLE001
+            parts = []
+        if len(parts) >= 2:
+            parts.sort(key=lambda q: -q.area)
+            return parts[:2]
+    try:
+        if L <= 0:
+            L = math.sqrt(max(g.area, 1.0))
+        p1 = shapely.Point(c.x - ux * L * 0.2, c.y - uy * L * 0.2)
+        p2 = shapely.Point(c.x + ux * L * 0.2, c.y + uy * L * 0.2)
+        vor = sops.voronoi_diagram(shapely.MultiPoint([p1, p2]),
+                                   envelope=g.envelope)
+        cells = []
+        for cell in vor.geoms:
+            inter = cell.intersection(g)
+            for q in shapely.get_parts(inter):
+                if q.geom_type == "Polygon" and q.area > 1.0:
+                    cells.append(q)
+        cells.sort(key=lambda q: -q.area)
+        if len(cells) >= 2:
+            return cells[:2]
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
 def _partition_group(u, k, row, crs, lines=None, allow_compact=True):
     if k <= 1:
         return [_strip_holes(u)]
@@ -81,17 +156,52 @@ def _partition_group(u, k, row, crs, lines=None, allow_compact=True):
             break
     if not pieces:
         return [u]
+    # Sanitize to single valid polygons; a MultiPolygon piece cannot be
+    # bisected reliably and used to abort the whole ring group.
+    _fin = []
+    for p in pieces:
+        try:
+            q = _poly(shapely.make_valid(p))
+        except Exception:  # noqa: BLE001
+            q = None
+        if q is None or q.is_empty:
+            continue
+        if q.geom_type == "MultiPolygon":
+            parts = [r for r in shapely.get_parts(q)
+                     if r.geom_type == "Polygon" and not r.is_empty]
+            if not parts:
+                continue
+            q = max(parts, key=lambda r: r.area)
+        if q.geom_type == "Polygon":
+            _fin.append(q)
+    if _fin:
+        pieces = _fin
     # Road cuts may give fewer pieces than the group needs (the ring must
     # still yield k zones).  Keep the OSM boundaries and compact-split only
     # the largest piece until the quota is met.
+    # The ring group must yield exactly k zones.  Try compact splits first,
+    # then a guaranteed bisection; never accept fewer than k (which used to
+    # collapse whole units).
     guard = 0
-    while allow_compact and len(pieces) < k and guard < 12:
+    while len(pieces) < k and guard < 2 * k + 4:
         guard += 1
         big = max(pieces, key=lambda p: p.area)
-        half = big.area / 1e6 / 2.0
-        subs = _compact_split(big, max(0.02, half))
+        subs = _compact_split(big, max(0.02, big.area / 1e6 / 2.0))
         if len(subs) < 2:
-            break
+            subs = _bisect(big)
+        if len(subs) >= 2:
+            subs = [q for q in subs
+                    if q is not None and not q.is_empty
+                    and q.geom_type == "Polygon" and q.area > 1.0]
+        if not subs or len(subs) < 2:
+            # try the second largest before giving up
+            if len(pieces) < 2:
+                break
+            rest = sorted(pieces, key=lambda p: -p.area)[1:]
+            big = rest[0]
+            subs = _bisect(big)
+            if not subs or len(subs) < 2:
+                break
         pieces = [p for p in pieces if p is not big] + list(subs)
     return _merge_to_k(pieces, k) if len(pieces) > k else pieces
 
@@ -176,77 +286,209 @@ def _aspect(g):
         return 1.0
 
 
-def split_elongated(m, lines=None, min_aspect=3.0, min_area=0.5):
-    """Split visibly elongated final zones along OSM lines (compact fallback).
+def _fold_into(big, small):
+    big = list(big)
+    for s in small:
+        best_i, best_l = 0, -1.0
+        for i, q in enumerate(big):
+            try:
+                l = s.boundary.intersection(q.boundary).length
+            except Exception:  # noqa: BLE001
+                l = 0.0
+            if l > best_l:
+                best_i, best_l = i, l
+        big[best_i] = shapely.union_all([big[best_i], s])
+    return big
 
-    Point 1 of the review: a long zone or a long part of a zone reads as an
-    artificial strip.  Prefer internal road/water lines; where none exist,
-    cut across the long axis into compact pieces (never a grid).
+
+def _extend_line(ln, ext):
+    """Extend a line by ext metres at both ends along its end directions."""
+    if ext <= 0:
+        return ln
+    cs = list(ln.coords)
+    if len(cs) < 2:
+        return ln
+    def _dir(a, b):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        L = math.hypot(dx, dy)
+        return (dx / L, dy / L) if L > 1e-9 else (0.0, 0.0)
+    u0 = _dir(cs[1], cs[0])
+    u1 = _dir(cs[-2], cs[-1])
+    p0 = (cs[0][0] + u0[0] * ext, cs[0][1] + u0[1] * ext)
+    p1 = (cs[-1][0] + u1[0] * ext, cs[-1][1] + u1[1] * ext)
+    return shapely.LineString([p0] + cs + [p1])
+
+
+def _split_by_line_path(p, lm, tree, max_parts=2, min_share=0.12,
+                        min_abs_km2=0.12):
+    """Split p with the most balanced internal OSM line (end-extended if
+    needed).  This is the fallback when the network faces are unbalanced.
     """
+    import shapely.ops as sops
+    from shapely.ops import linemerge, unary_union
+    if lm is None or tree is None:
+        return None
+    segs = []
+    for j in tree.query(p.buffer(1.0)):
+        ln = lm.geometry.values[int(j)]
+        try:
+            h = ln.intersection(p)
+        except Exception:  # noqa: BLE001
+            continue
+        for part in shapely.get_parts(h):
+            if part.geom_type == "LineString" and part.length >= 60.0:
+                segs.append(part)
+    if len(segs) < 1:
+        return None
+    try:
+        merged = linemerge(unary_union(segs))
+        lines = [q for q in shapely.get_parts(merged)
+                 if q.geom_type == "LineString" and q.length >= 60.0]
+    except Exception:  # noqa: BLE001
+        lines = segs
+    if not lines:
+        return None
+    lines.sort(key=lambda q: -q.length)
+    for ln in lines[:24]:
+        for ext in (0.0, 60.0, 150.0, 300.0, 600.0, 1000.0):
+            cutter = _extend_line(ln, ext)
+            try:
+                parts = [q for q in sops.split(p, cutter).geoms
+                         if q.geom_type == "Polygon" and q.area > 1.0]
+            except Exception:  # noqa: BLE001
+                continue
+            if len(parts) < 2:
+                continue
+            big = [q for q in parts if q.area >= min_share * p.area]
+            if len(big) < 2:
+                continue
+            small = [q for q in parts if q.area < min_share * p.area]
+            if small:
+                big = _fold_into(big, small)
+            big = [q for q in big
+                   if q.area / 1e6 >= min_abs_km2 or q.area >= 0.2 * p.area]
+            if len(big) < 2:
+                continue
+            if len(big) > max_parts:
+                big = _merge_to_k(big, max_parts)
+            if max(q.area for q in big) <= 0.85 * p.area:
+                return big
+    return None
+
+
+def _cut_by_network(p, lm, tree, max_parts=2, min_share=0.20):
+    """Cut p along the internal OSM line network into <= max_parts pieces.
+
+    Polygonize the full internal network (roads/water/admin/landuse), then
+    merge the smallest adjacent faces until only max_parts remain.  Every
+    surviving boundary is a real OSM line; no straight invented cut is made.
+    Returns None when the network does not divide p into balanced parts.
+    """
+    from shapely.ops import polygonize, unary_union
+    if lm is None or tree is None:
+        return None
+    segs = []
+    for j in tree.query(p.buffer(1.0)):
+        ln = lm.geometry.values[int(j)]
+        try:
+            h = ln.intersection(p)
+        except Exception:  # noqa: BLE001
+            continue
+        for part in shapely.get_parts(h):
+            if part.geom_type == "LineString" and part.length >= 60.0:
+                segs.append(part)
+    if len(segs) < 2:
+        return _split_by_line_path(p, lm, tree, max_parts=max_parts)
+    try:
+        net = unary_union([p.boundary] + segs)
+        faces = [f for f in polygonize(net)
+                 if f.geom_type == "Polygon" and f.area >= 0.02 * p.area]
+    except Exception:  # noqa: BLE001
+        return _split_by_line_path(p, lm, tree, max_parts=max_parts)
+    if len(faces) < 2:
+        return _split_by_line_path(p, lm, tree, max_parts=max_parts)
+    while len(faces) > max_parts:
+        fs = sorted(faces, key=lambda q: q.area)
+        s = fs[0]
+        rest = fs[1:]
+        best = None
+        for k, q in enumerate(rest):
+            try:
+                sh = s.boundary.intersection(q.boundary).length
+            except Exception:  # noqa: BLE001
+                sh = 0.0
+            if best is None or sh > best[0]:
+                best = (sh, k)
+        if best is None or best[0] <= 1.0:
+            return None
+        k = best[1]
+        u = unary_union([rest[k], s])
+        if u.geom_type != "Polygon":
+            return None
+        rest[k] = u
+        faces = rest
+    big = [q for q in faces if q.area >= min_share * p.area]
+    if len(big) < 2 or len(big) != len(faces):
+        return _split_by_line_path(p, lm, tree, max_parts=max_parts)
+    return big
+
+
+def split_elongated(m, lines=None, min_aspect=3.5, min_area=0.8):
+    """Split visibly elongated final zones along real OSM line networks.
+
+    The internal line network is polygonized and merged down to two pieces
+    (three above aspect 6), so every cut follows real linework.  Zones with
+    no balanced real-line division are left for the extreme-elongated merge
+    pass; no invented straight cut is made.  Aspect 3.5-4.5 zones are
+    allowed to survive instead of being diced into a chain of teeth.
+    """
+    lm = None
+    tree = None
+    if lines is not None and len(lines):
+        try:
+            lm = lines.to_crs(m.crs)
+            tree = shapely.STRtree(np.asarray(lm.geometry.values,
+                                              dtype=object))
+        except Exception:  # noqa: BLE001
+            lm = tree = None
     rows = []
     changed = 0
     for _, r in m.iterrows():
         g = r.geometry
+        if g is None or g.is_empty:
+            rows.append(dict(r))
+            continue
         a = g.area / 1e6
-        if g is None or g.is_empty or a < min_area or _aspect(g) <= min_aspect:
-            rows.append(dict(r))
-            continue
         asp = _aspect(g)
-        one = gpd.GeoDataFrame(
-            {"kind": ["land"], "geometry": [g]}, geometry="geometry",
-            crs=m.crs)
-        pieces = []
-        if lines is not None and len(lines):
-            try:
-                sp = split_with_roads(one, lines, max_area=max(0.15, a / 2.0),
-                                      min_part=0.05, strict=False)
-                pieces = [p for p in sp.geometry
-                          if p is not None and not p.is_empty]
-            except Exception:  # noqa: BLE001
-                pieces = []
-        if len(pieces) < 2:
-            try:
-                target = max(0.12, a / max(2, int(round(asp / 2.0))))
-                sp = _split_oversized(one, target, lines=None,
-                                      cell_km2=target)
-                pieces = [p for p in sp.geometry
-                          if p is not None and not p.is_empty]
-            except Exception:  # noqa: BLE001
-                pieces = []
-        if len(pieces) < 2:
+        if a < min_area or asp <= min_aspect:
             rows.append(dict(r))
             continue
-        # A road face can itself be a long strip; compact-split those
-        # remaining elongated pieces so no long zone survives the pass.
-        _fin = []
-        for p in pieces:
-            if p.area / 1e6 < 0.03:
-                continue
-            _pa = _aspect(p)
-            if p.area / 1e6 >= 0.3 and _pa > 3.0:
-                _t = max(0.10, p.area / 1e6 / max(2, int(round(_pa / 2))))
-                try:
-                    _one2 = gpd.GeoDataFrame(
-                        {"kind": ["land"], "geometry": [p]},
-                        geometry="geometry", crs=m.crs)
-                    _sp2 = _split_oversized(_one2, _t, lines=None,
-                                            cell_km2=_t)
-                    _pcs = [q for q in _sp2.geometry
-                            if q is not None and not q.is_empty
-                            and q.area / 1e6 >= 0.03]
-                except Exception:  # noqa: BLE001
-                    _pcs = []
-                if (len(_pcs) >= 2
-                        and max(_aspect(q) for q in _pcs) < _pa):
-                    _fin.extend(_pcs)
-                    continue
-            _fin.append(p)
-        pieces = _fin
+        # Allow mildly elongated zones to survive unless they are large.
+        if asp <= 4.5 and a < 2.0:
+            rows.append(dict(r))
+            continue
+        n_cuts = 1 if asp <= 6.0 else 2
+        pieces = [g]
+        for _ in range(n_cuts):
+            idx = max(range(len(pieces)), key=lambda k: pieces[k].area)
+            p = pieces[idx]
+            if p.area / 1e6 < min_area or _aspect(p) <= min_aspect:
+                break
+            parts = _cut_by_network(
+                p, lm, tree, max_parts=2 if _aspect(p) <= 6.0 else 3)
+            if not parts or len(parts) < 2:
+                break
+            pieces = pieces[:idx] + list(parts) + pieces[idx + 1:]
+            changed += 1
+            if len(pieces) >= 3:
+                break
+        if len(pieces) == 1:
+            rows.append(dict(r))
+            continue
         for p in pieces:
             nr = dict(r)
             nr["geometry"] = p
             rows.append(nr)
-        changed += 1
     if not changed:
         return m, 0
     out = gpd.GeoDataFrame(rows, geometry="geometry", crs=m.crs)
@@ -305,8 +547,12 @@ def repartition_rings(m, lines=None, soft=False):
         group_vals = [c for c in group_vals if c in _CLS_RANK]
         group_cls = (max(group_vals, key=lambda c: _CLS_RANK[c])
                      if group_vals else None)
+        # Ring repair must always be able to produce k zones; otherwise a
+        # group with no line-based cut collapses into one zone and the whole
+        # unit loses a large part of its zones.  Compact cuts here are
+        # confined to the ring group, not general partitioning.
         for p in _partition_group(u, k, metas[i], m.crs, lines=lines,
-                                  allow_compact=not soft):
+                                  allow_compact=True):
             nr = dict(metas[i])
             if group_cls:
                 nr["density_class"] = group_cls
