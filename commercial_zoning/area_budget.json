@@ -1,0 +1,102 @@
+{
+ "source": "Guangdong Mobile reference microgrid, aggregate by scene class",
+ "density_metric": "road_km_per_km2",
+ "thresholds": {
+  "core_min": 6.39,
+  "urban_min": 2.33,
+  "rural_min": 0.15
+ },
+ "density_stats": {
+  "core": {
+   "n": 6609,
+   "p05": 3.888,
+   "p10": 5.159,
+   "p25": 7.627,
+   "p50": 10.981,
+   "p75": 15.675,
+   "p90": 21.956
+  },
+  "urban_town": {
+   "n": 1325,
+   "p05": 1.477,
+   "p10": 2.192,
+   "p25": 3.416,
+   "p50": 5.208,
+   "p75": 7.353,
+   "p90": 10.062
+  },
+  "rural": {
+   "n": 7733,
+   "p05": 0.148,
+   "p10": 0.304,
+   "p25": 0.646,
+   "p50": 1.306,
+   "p75": 2.472,
+   "p90": 4.37
+  }
+ },
+ "classes": {
+  "core": {
+   "label": "核心城区",
+   "n": 6609,
+   "p10": 0.524,
+   "p50": 1.002,
+   "p90": 2.444,
+   "mean": 1.386,
+   "min_factor": 0.55,
+   "max_factor": 1.8,
+   "area_min_km2": 0.52,
+   "area_max_km2": 2.44
+  },
+  "urban": {
+   "label": "非核心城区",
+   "n": 1690,
+   "p10": 0.77,
+   "p50": 1.74,
+   "p90": 3.94,
+   "mean": 2.21,
+   "min_factor": 0.55,
+   "max_factor": 1.8,
+   "area_min_km2": 0.77,
+   "area_max_km2": 3.94
+  },
+  "rural": {
+   "label": "农村",
+   "n": 7733,
+   "p10": 3.445,
+   "p50": 16.659,
+   "p90": 41.201,
+   "mean": 20.956,
+   "min_factor": 0.55,
+   "max_factor": 1.8,
+   "area_min_km2": 3.44,
+   "area_max_km2": 41.2
+  },
+  "remote": {
+   "label": "沙漠/高原等稀疏区",
+   "mean": 75.7,
+   "derived": true,
+   "min_factor": 0.55,
+   "max_factor": 1.8,
+   "max_km2": 250.0,
+   "area_min_km2": 10.0,
+   "area_max_km2": 250.0
+  },
+  "town": {
+   "area_min_km2": 0.82,
+   "area_max_km2": 7.0,
+   "mean": 3.45,
+   "label": "乡镇镇区",
+   "n": 1325,
+   "p10": 0.82,
+   "p50": 2.44,
+   "p90": 7.0
+  }
+ },
+ "area_tolerance": {
+  "min_factor": 0.55,
+  "max_factor": 1.8,
+  "note": "zones may be 45% smaller or 80% larger than the class mean to keep OSM boundaries"
+ },
+ "count_policy": "area-ranges-only"
+}

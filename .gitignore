@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.log
+**/cache/
+**/data/china/*.pbf
+**/data/china/*.osm.pbf
+**/data/reference/*.csv
