@@ -1,0 +1,779 @@
+{
+  "source": "Guangdong operator reference, aggregated to OSM rules",
+  "province": "nationwide fallback",
+  "cell_km": 2.0,
+  "thresholds": {
+    "core_min_road_density": 7.0,
+    "urban_min_road_density": 2.5,
+    "rural_min_road_density": 0.15
+  },
+  "scale_rules": {
+    "large_min_built_km2": 4524.0,
+    "medium_min_built_km2": 2672.0
+  },
+  "type_rules": {
+    "urban_industrial": {
+      "built_share_median": 0.3859,
+      "road_density_median": 3.401,
+      "land_km2_median": 13199.7
+    },
+    "mixed": {
+      "built_share_median": 0.2201,
+      "road_density_median": 1.69,
+      "land_km2_median": 12935.3
+    },
+    "rural_mountain": {
+      "built_share_median": 0.1166,
+      "road_density_median": 0.966,
+      "land_km2_median": 36920.6
+    },
+    "metro_core": {
+      "built_share_median": 0.4072,
+      "road_density_median": 3.428,
+      "land_km2_median": 8330.9
+    }
+  },
+  "type_scale_budget": {
+    "mixed_large": {
+      "type": "mixed",
+      "scale": "large",
+      "cities": [
+        "中山",
+        "广州"
+      ],
+      "n_zones": 2480,
+      "area_km2": 9041.4,
+      "classes": {
+        "core": {
+          "n": 1638,
+          "p10": 0.558,
+          "p50": 1.147,
+          "p90": 2.576,
+          "mean": 1.47
+        },
+        "urban": {
+          "n": 140,
+          "p10": 0.837,
+          "p50": 1.687,
+          "p90": 3.163,
+          "mean": 1.993
+        },
+        "town": {
+          "n": 158,
+          "p10": 0.553,
+          "p50": 2.148,
+          "p90": 7.103,
+          "mean": 3.385
+        },
+        "rural": {
+          "n": 544,
+          "p10": 1.853,
+          "p50": 6.063,
+          "p90": 25.203,
+          "mean": 10.698
+        }
+      }
+    },
+    "mixed_medium": {
+      "type": "mixed",
+      "scale": "medium",
+      "cities": [
+        "汕头",
+        "潮州",
+        "珠海"
+      ],
+      "n_zones": 1441,
+      "area_km2": 7110.2,
+      "classes": {
+        "core": {
+          "n": 486,
+          "p10": 0.527,
+          "p50": 1.144,
+          "p90": 2.847,
+          "mean": 1.427
+        },
+        "urban": {
+          "n": 205,
+          "p10": 0.63,
+          "p50": 1.843,
+          "p90": 3.602,
+          "mean": 2.227
+        },
+        "town": {
+          "n": 139,
+          "p10": 0.896,
+          "p50": 2.471,
+          "p90": 5.553,
+          "mean": 2.981
+        },
+        "rural": {
+          "n": 611,
+          "p10": 1.572,
+          "p50": 6.256,
+          "p90": 19.888,
+          "mean": 9.077
+        }
+      }
+    },
+    "rural_mountain_large": {
+      "type": "rural_mountain",
+      "scale": "large",
+      "cities": [
+        "惠州",
+        "江门"
+      ],
+      "n_zones": 1611,
+      "area_km2": 21362.9,
+      "classes": {
+        "core": {
+          "n": 422,
+          "p10": 0.639,
+          "p50": 1.218,
+          "p90": 2.889,
+          "mean": 1.566
+        },
+        "urban": {
+          "n": 240,
+          "p10": 0.849,
+          "p50": 1.767,
+          "p90": 4.662,
+          "mean": 2.324
+        },
+        "town": {
+          "n": 128,
+          "p10": 1.107,
+          "p50": 3.082,
+          "p90": 9.694,
+          "mean": 4.585
+        },
+        "rural": {
+          "n": 821,
+          "p10": 3.561,
+          "p50": 20.103,
+          "p90": 42.642,
+          "mean": 23.822
+        }
+      }
+    },
+    "rural_mountain_medium": {
+      "type": "rural_mountain",
+      "scale": "medium",
+      "cities": [
+        "揭阳",
+        "汕尾",
+        "清远",
+        "肇庆"
+      ],
+      "n_zones": 2634,
+      "area_km2": 43538.4,
+      "classes": {
+        "core": {
+          "n": 472,
+          "p10": 0.518,
+          "p50": 1.037,
+          "p90": 2.576,
+          "mean": 1.418
+        },
+        "urban": {
+          "n": 192,
+          "p10": 0.831,
+          "p50": 1.829,
+          "p90": 3.36,
+          "mean": 2.066
+        },
+        "town": {
+          "n": 229,
+          "p10": 0.879,
+          "p50": 2.59,
+          "p90": 6.583,
+          "mean": 3.383
+        },
+        "rural": {
+          "n": 1741,
+          "p10": 4.07,
+          "p50": 16.731,
+          "p90": 53.535,
+          "mean": 23.951
+        }
+      }
+    },
+    "rural_mountain_small": {
+      "type": "rural_mountain",
+      "scale": "small",
+      "cities": [
+        "云浮",
+        "梅州",
+        "河源",
+        "湛江",
+        "茂名",
+        "阳江",
+        "韶关"
+      ],
+      "n_zones": 4896,
+      "area_km2": 89515.6,
+      "classes": {
+        "core": {
+          "n": 556,
+          "p10": 0.539,
+          "p50": 1.013,
+          "p90": 2.351,
+          "mean": 1.311
+        },
+        "urban": {
+          "n": 322,
+          "p10": 0.674,
+          "p50": 1.846,
+          "p90": 5.18,
+          "mean": 2.575
+        },
+        "town": {
+          "n": 220,
+          "p10": 0.861,
+          "p50": 1.972,
+          "p90": 6.999,
+          "mean": 3.249
+        },
+        "rural": {
+          "n": 3798,
+          "p10": 6.419,
+          "p50": 19.935,
+          "p90": 39.709,
+          "mean": 22.971
+        }
+      }
+    },
+    "urban_industrial_large": {
+      "type": "urban_industrial",
+      "scale": "large",
+      "cities": [
+        "东莞",
+        "佛山"
+      ],
+      "n_zones": 2588,
+      "area_km2": 6251.3,
+      "classes": {
+        "core": {
+          "n": 1415,
+          "p10": 0.686,
+          "p50": 1.169,
+          "p90": 2.55,
+          "mean": 1.436
+        },
+        "urban": {
+          "n": 589,
+          "p10": 0.801,
+          "p50": 1.632,
+          "p90": 3.527,
+          "mean": 2.059
+        },
+        "town": {
+          "n": 409,
+          "p10": 1.231,
+          "p50": 2.843,
+          "p90": 7.025,
+          "mean": 3.678
+        },
+        "rural": {
+          "n": 175,
+          "p10": 1.611,
+          "p50": 6.29,
+          "p90": 18.121,
+          "mean": 8.581
+        }
+      }
+    },
+    "metro_core_large": {
+      "type": "metro_core",
+      "scale": "large",
+      "cities": [
+        "深圳"
+      ],
+      "n_zones": 1707,
+      "area_km2": 2438.0,
+      "classes": {
+        "core": {
+          "n": 1620,
+          "p10": 0.446,
+          "p50": 0.695,
+          "p90": 1.497,
+          "mean": 1.207
+        },
+        "urban": {
+          "n": 1690,
+          "p10": 0.77,
+          "p50": 1.74,
+          "p90": 3.94,
+          "mean": 2.21
+        },
+        "town": {
+          "n": 42,
+          "p10": 0.311,
+          "p50": 0.765,
+          "p90": 1.614,
+          "mean": 0.943
+        },
+        "rural": {
+          "n": 43,
+          "p10": 1.082,
+          "p50": 3.746,
+          "p90": 17.237,
+          "mean": 10.226
+        }
+      }
+    }
+  },
+  "scale_budget": {
+    "large": {
+      "cities": [
+        "东莞",
+        "中山",
+        "佛山",
+        "广州",
+        "惠州",
+        "江门",
+        "深圳"
+      ],
+      "n_zones": 8386,
+      "built_zones": 6803,
+      "area_km2": 39093.6,
+      "classes": {
+        "core": {
+          "n": 5095,
+          "p10": 0.523,
+          "p50": 0.984,
+          "p90": 2.39,
+          "mean": 1.385
+        },
+        "urban": {
+          "n": 971,
+          "p10": 0.807,
+          "p50": 1.688,
+          "p90": 3.725,
+          "mean": 2.114
+        },
+        "town": {
+          "n": 737,
+          "p10": 0.785,
+          "p50": 2.647,
+          "p90": 7.343,
+          "mean": 3.617
+        },
+        "rural": {
+          "n": 1583,
+          "p10": 2.22,
+          "p50": 11.919,
+          "p90": 34.935,
+          "mean": 17.257
+        }
+      }
+    },
+    "medium": {
+      "cities": [
+        "揭阳",
+        "汕头",
+        "汕尾",
+        "清远",
+        "潮州",
+        "珠海",
+        "肇庆"
+      ],
+      "n_zones": 4075,
+      "built_zones": 1723,
+      "area_km2": 50648.6,
+      "classes": {
+        "core": {
+          "n": 958,
+          "p10": 0.521,
+          "p50": 1.098,
+          "p90": 2.69,
+          "mean": 1.422
+        },
+        "urban": {
+          "n": 397,
+          "p10": 0.743,
+          "p50": 1.839,
+          "p90": 3.569,
+          "mean": 2.149
+        },
+        "town": {
+          "n": 368,
+          "p10": 0.878,
+          "p50": 2.528,
+          "p90": 6.407,
+          "mean": 3.231
+        },
+        "rural": {
+          "n": 2352,
+          "p10": 2.943,
+          "p50": 13.43,
+          "p90": 48.407,
+          "mean": 20.087
+        }
+      }
+    },
+    "small": {
+      "cities": [
+        "云浮",
+        "梅州",
+        "河源",
+        "湛江",
+        "茂名",
+        "阳江",
+        "韶关"
+      ],
+      "n_zones": 4896,
+      "built_zones": 1098,
+      "area_km2": 89515.6,
+      "classes": {
+        "core": {
+          "n": 556,
+          "p10": 0.539,
+          "p50": 1.013,
+          "p90": 2.351,
+          "mean": 1.311
+        },
+        "urban": {
+          "n": 322,
+          "p10": 0.674,
+          "p50": 1.846,
+          "p90": 5.18,
+          "mean": 2.575
+        },
+        "town": {
+          "n": 220,
+          "p10": 0.861,
+          "p50": 1.972,
+          "p90": 6.999,
+          "mean": 3.249
+        },
+        "rural": {
+          "n": 3798,
+          "p10": 6.419,
+          "p50": 19.935,
+          "p90": 39.709,
+          "mean": 22.971
+        }
+      }
+    }
+  },
+  "calibration": [
+    {
+      "land_km2": 8330.92521016568,
+      "cell_km2": 4.0,
+      "road_km": 29018.927630180446,
+      "road_density": 3.483277895085477,
+      "core_share": 0.21846313033505255,
+      "urban_share": 0.1901349442036941,
+      "rural_share": 0.19301577669162884,
+      "built_area_km2": 3404.0,
+      "built_share": 0.40859807453874664,
+      "built_cells": 851.0,
+      "city": "东莞",
+      "type": "urban_industrial",
+      "scale": "large"
+    },
+    {
+      "land_km2": 7287.371645662574,
+      "cell_km2": 4.0,
+      "road_km": 20071.889211665628,
+      "road_density": 2.754338626823344,
+      "core_share": 0.15863058125875168,
+      "urban_share": 0.1833308447765504,
+      "rural_share": 0.17399963411427088,
+      "built_area_km2": 2492.0,
+      "built_share": 0.34196142603530205,
+      "built_cells": 623.0,
+      "city": "中山",
+      "type": "mixed",
+      "scale": "large"
+    },
+    {
+      "land_km2": 27680.902152753497,
+      "cell_km2": 4.0,
+      "road_km": 23311.801252302674,
+      "road_density": 0.842161903671329,
+      "core_share": 0.007514205962369968,
+      "urban_share": 0.09089299135251365,
+      "rural_share": 0.3825019842767943,
+      "built_area_km2": 2724.0,
+      "built_share": 0.09840719731488362,
+      "built_cells": 681.0,
+      "city": "云浮",
+      "type": "rural_mountain",
+      "scale": "small"
+    },
+    {
+      "land_km2": 18068.44859670106,
+      "cell_km2": 4.0,
+      "road_km": 59968.5880413757,
+      "road_density": 3.3189671886010608,
+      "core_share": 0.176882922897073,
+      "urban_share": 0.18640227919816704,
+      "rural_share": 0.2703054428752517,
+      "built_area_km2": 6564.0,
+      "built_share": 0.36328520209524,
+      "built_cells": 1641.0,
+      "city": "佛山",
+      "type": "urban_industrial",
+      "scale": "large"
+    },
+    {
+      "land_km2": 39132.871138581264,
+      "cell_km2": 4.0,
+      "road_km": 97847.05007057697,
+      "road_density": 2.5003800442873496,
+      "core_share": 0.14248890607217926,
+      "urban_share": 0.1389113510416726,
+      "rural_share": 0.17683343436504312,
+      "built_area_km2": 11012.0,
+      "built_share": 0.28140025711385186,
+      "built_cells": 2753.0,
+      "city": "广州",
+      "type": "mixed",
+      "scale": "large"
+    },
+    {
+      "land_km2": 50479.61679939737,
+      "cell_km2": 4.0,
+      "road_km": 69916.50103631576,
+      "road_density": 1.3850442112934271,
+      "core_share": 0.057052731034883404,
+      "urban_share": 0.09984227931104596,
+      "rural_share": 0.260620044963516,
+      "built_area_km2": 7920.0,
+      "built_share": 0.15689501034592934,
+      "built_cells": 1980.0,
+      "city": "惠州",
+      "type": "rural_mountain",
+      "scale": "large"
+    },
+    {
+      "land_km2": 20375.64120954262,
+      "cell_km2": 4.0,
+      "road_km": 31350.374886906895,
+      "road_density": 1.5386202850992696,
+      "core_share": 0.04711508168638141,
+      "urban_share": 0.1660806629444945,
+      "rural_share": 0.31743786286199477,
+      "built_area_km2": 4344.0,
+      "built_share": 0.2131957446308759,
+      "built_cells": 1086.0,
+      "city": "揭阳",
+      "type": "rural_mountain",
+      "scale": "medium"
+    },
+    {
+      "land_km2": 36987.419326698546,
+      "cell_km2": 4.0,
+      "road_km": 55613.79145708723,
+      "road_density": 1.5035866916225662,
+      "core_share": 0.03460636138720985,
+      "urban_share": 0.16946302591799325,
+      "rural_share": 0.40824691948974123,
+      "built_area_km2": 7548.0,
+      "built_share": 0.2040693873052031,
+      "built_cells": 1887.0,
+      "city": "梅州",
+      "type": "rural_mountain",
+      "scale": "small"
+    },
+    {
+      "land_km2": 14213.253012247147,
+      "cell_km2": 4.0,
+      "road_km": 18945.572459720963,
+      "road_density": 1.3329511860090095,
+      "core_share": 0.05825548868274817,
+      "urban_share": 0.12973806899877732,
+      "rural_share": 0.1533779774497476,
+      "built_area_km2": 2672.0,
+      "built_share": 0.18799355768152548,
+      "built_cells": 668.0,
+      "city": "汕头",
+      "type": "mixed",
+      "scale": "medium"
+    },
+    {
+      "land_km2": 15453.298016277518,
+      "cell_km2": 4.0,
+      "road_km": 16509.84306199124,
+      "road_density": 1.0683701980380385,
+      "core_share": 0.013201065545045427,
+      "urban_share": 0.1237276339319944,
+      "rural_share": 0.41492760919034943,
+      "built_area_km2": 2116.0,
+      "built_share": 0.1369286994770398,
+      "built_cells": 529.0,
+      "city": "汕尾",
+      "type": "rural_mountain",
+      "scale": "medium"
+    },
+    {
+      "land_km2": 31329.199971905433,
+      "cell_km2": 4.0,
+      "road_km": 34292.67067429652,
+      "road_density": 1.0945913302940575,
+      "core_share": 0.02936557591081206,
+      "urban_share": 0.11503645172018115,
+      "rural_share": 0.2960816110311877,
+      "built_area_km2": 4524.0,
+      "built_share": 0.14440202763099322,
+      "built_cells": 1131.0,
+      "city": "江门",
+      "type": "rural_mountain",
+      "scale": "large"
+    },
+    {
+      "land_km2": 37388.958857925405,
+      "cell_km2": 4.0,
+      "road_km": 21733.786087833374,
+      "road_density": 0.5812888818439624,
+      "core_share": 0.004814255478040546,
+      "urban_share": 0.048677472055743305,
+      "rural_share": 0.35925044211689233,
+      "built_area_km2": 2000.0,
+      "built_share": 0.05349172753378385,
+      "built_cells": 500.0,
+      "city": "河源",
+      "type": "rural_mountain",
+      "scale": "small"
+    },
+    {
+      "land_km2": 8330.92521016568,
+      "cell_km2": 4.0,
+      "road_km": 28559.047412778476,
+      "road_density": 3.4280763171333897,
+      "core_share": 0.21654257534309604,
+      "urban_share": 0.1906150829516832,
+      "rural_share": 0.1944561929355962,
+      "built_area_km2": 3392.0,
+      "built_share": 0.40715765829477923,
+      "built_cells": 848.0,
+      "city": "深圳",
+      "type": "metro_core",
+      "scale": "large"
+    },
+    {
+      "land_km2": 61004.56626219553,
+      "cell_km2": 4.0,
+      "road_km": 44663.13557090287,
+      "road_density": 0.7321277456336999,
+      "core_share": 0.007474850293011308,
+      "urban_share": 0.06983083826365827,
+      "rural_share": 0.3742014966861012,
+      "built_area_km2": 4716.0,
+      "built_share": 0.07730568855666958,
+      "built_cells": 1179.0,
+      "city": "清远",
+      "type": "rural_mountain",
+      "scale": "medium"
+    },
+    {
+      "land_km2": 57499.48793437582,
+      "cell_km2": 4.0,
+      "road_km": 37581.27127904343,
+      "road_density": 0.6535931471587181,
+      "core_share": 0.009252256308911338,
+      "urban_share": 0.07353108961292694,
+      "rural_share": 0.24862830111315126,
+      "built_area_km2": 4760.0,
+      "built_share": 0.08278334592183828,
+      "built_cells": 1190.0,
+      "city": "湛江",
+      "type": "rural_mountain",
+      "scale": "small"
+    },
+    {
+      "land_km2": 10577.526231091431,
+      "cell_km2": 4.0,
+      "road_km": 17872.248858420924,
+      "road_density": 1.6896435393265665,
+      "core_share": 0.059371159785363205,
+      "urban_share": 0.16071810769923162,
+      "rural_share": 0.3486637536439801,
+      "built_area_km2": 2328.0,
+      "built_share": 0.2200892674845948,
+      "built_cells": 582.0,
+      "city": "潮州",
+      "type": "mixed",
+      "scale": "medium"
+    },
+    {
+      "land_km2": 12935.270400865835,
+      "cell_km2": 4.0,
+      "road_km": 21277.520781650426,
+      "road_density": 1.64492276715191,
+      "core_share": 0.07205106434710601,
+      "urban_share": 0.12369281432979573,
+      "rural_share": 0.1530698577331222,
+      "built_area_km2": 2532.0,
+      "built_share": 0.19574387867690174,
+      "built_cells": 633.0,
+      "city": "珠海",
+      "type": "mixed",
+      "scale": "medium"
+    },
+    {
+      "land_km2": 36853.80470729075,
+      "cell_km2": 4.0,
+      "road_km": 38214.15549899654,
+      "road_density": 1.0369120855366303,
+      "core_share": 0.013350046322426735,
+      "urban_share": 0.11027355336248426,
+      "rural_share": 0.42828685193736504,
+      "built_area_km2": 4556.0,
+      "built_share": 0.12362359968491099,
+      "built_cells": 1139.0,
+      "city": "肇庆",
+      "type": "rural_mountain",
+      "scale": "medium"
+    },
+    {
+      "land_km2": 35247.78349299848,
+      "cell_km2": 4.0,
+      "road_km": 31524.61917334593,
+      "road_density": 0.8943716753028709,
+      "core_share": 0.01055385511187939,
+      "urban_share": 0.0990700592760291,
+      "rural_share": 0.3569018744823729,
+      "built_area_km2": 3864.0,
+      "built_share": 0.1096239143879085,
+      "built_cells": 966.0,
+      "city": "茂名",
+      "type": "rural_mountain",
+      "scale": "small"
+    },
+    {
+      "land_km2": 44604.85062694007,
+      "cell_km2": 4.0,
+      "road_km": 25438.188962175176,
+      "road_density": 0.570300956165768,
+      "core_share": 0.0042147882429283,
+      "urban_share": 0.04582461259864598,
+      "rural_share": 0.36991492557615396,
+      "built_area_km2": 2232.0,
+      "built_share": 0.05003940084157428,
+      "built_cells": 558.0,
+      "city": "韶关",
+      "type": "rural_mountain",
+      "scale": "small"
+    }
+  ],
+  "hierarchy": "commercial_zoning/models/area_budget_hierarchy.json",
+  "scale_model": {
+    "model": "budget_scale_model.json",
+    "features": [
+      "log_land_km2",
+      "log_built_km2",
+      "built_share",
+      "log_road_km",
+      "log_road_density"
+    ],
+    "classes": [
+      "large",
+      "medium",
+      "small"
+    ],
+    "leave_one_out_accuracy": 0.6,
+    "n": 20
+  }
+}

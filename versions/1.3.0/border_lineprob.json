@@ -1,0 +1,11 @@
+{
+ "points": 151458,
+ "near_osmlines": 0.3068,
+ "border_near_ref": 0.14,
+ "auc_lineprob": 0.543,
+ "ap_lineprob": 0.193,
+ "top9_precision@15": 0.2115,
+ "top9_recall@15": 0.0464,
+ "top5_precision@15": 0.2301,
+ "top5_recall@15": 0.0252
+}

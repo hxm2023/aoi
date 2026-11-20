@@ -1,0 +1,104 @@
+{
+  "source": "中山 reference microgrid, aggregate by scene class",
+  "density_metric": "road_km_per_km2",
+  "thresholds": {
+    "core_min": 4.83,
+    "urban_min": 3.83,
+    "rural_min": 1.11
+  },
+  "density_stats": {
+    "core": {
+      "n": 240,
+      "p05": 3.272,
+      "p10": 4.17,
+      "p25": 5.484,
+      "p50": 7.621,
+      "p75": 10.764,
+      "p90": 15.928
+    },
+    "urban_town": {
+      "n": 159,
+      "p05": 2.445,
+      "p10": 3.415,
+      "p25": 4.431,
+      "p50": 5.776,
+      "p75": 7.63,
+      "p90": 9.739
+    },
+    "rural": {
+      "n": 139,
+      "p05": 1.115,
+      "p10": 1.452,
+      "p25": 2.042,
+      "p50": 3.06,
+      "p75": 4.243,
+      "p90": 5.694
+    }
+  },
+  "classes": {
+    "core": {
+      "label": "核心城区",
+      "n": 240,
+      "p10": 0.647,
+      "p50": 1.437,
+      "p90": 3.185,
+      "mean": 1.677,
+      "min_factor": 0.55,
+      "max_factor": 1.8,
+      "area_min_km2": 0.647,
+      "area_max_km2": 3.185
+    },
+    "urban": {
+      "label": "非核心城区",
+      "n": 140,
+      "p10": 0.837,
+      "p50": 1.687,
+      "p90": 3.163,
+      "mean": 1.993,
+      "min_factor": 0.55,
+      "max_factor": 1.8,
+      "area_min_km2": 0.837,
+      "area_max_km2": 3.163
+    },
+    "town": {
+      "label": "乡镇镇区",
+      "n": 19,
+      "p10": 0.689,
+      "p50": 1.741,
+      "p90": 3.409,
+      "mean": 2.088,
+      "min_factor": 0.55,
+      "max_factor": 1.8,
+      "area_min_km2": 0.689,
+      "area_max_km2": 3.409
+    },
+    "rural": {
+      "label": "农村",
+      "n": 139,
+      "p10": 1.978,
+      "p50": 4.846,
+      "p90": 14.194,
+      "mean": 7.393,
+      "min_factor": 0.55,
+      "max_factor": 1.8,
+      "area_min_km2": 1.978,
+      "area_max_km2": 14.194
+    },
+    "remote": {
+      "label": "沙漠/高原等稀疏区",
+      "mean": 40.9,
+      "derived": true,
+      "min_factor": 0.55,
+      "max_factor": 1.8,
+      "max_km2": 250.0,
+      "area_min_km2": 6.13,
+      "area_max_km2": 250.0
+    }
+  },
+  "area_tolerance": {
+    "min_factor": 0.55,
+    "max_factor": 1.8,
+    "note": "zones may be 45% smaller or 80% larger than the class mean to keep OSM boundaries"
+  },
+  "count_policy": "area-ranges-only"
+}

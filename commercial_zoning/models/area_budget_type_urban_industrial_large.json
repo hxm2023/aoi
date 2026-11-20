@@ -1,0 +1,105 @@
+{
+  "source": "Guangdong reference aggregate · city_type_scale urban_industrial_large",
+  "level": "city_type_scale",
+  "name": "urban_industrial_large",
+  "parent": null,
+  "n_zones": 2588,
+  "area_km2": 6251.3,
+  "density_metric": "road_km_per_km2",
+  "thresholds": {
+    "core_min": 6.39,
+    "urban_min": 2.33,
+    "rural_min": 0.15
+  },
+  "density_stats": {
+    "core": {
+      "n": 6609,
+      "p05": 3.888,
+      "p10": 5.159,
+      "p25": 7.627,
+      "p50": 10.981,
+      "p75": 15.675,
+      "p90": 21.956
+    },
+    "urban_town": {
+      "n": 1325,
+      "p05": 1.477,
+      "p10": 2.192,
+      "p25": 3.416,
+      "p50": 5.208,
+      "p75": 7.353,
+      "p90": 10.062
+    },
+    "rural": {
+      "n": 7733,
+      "p05": 0.148,
+      "p10": 0.304,
+      "p25": 0.646,
+      "p50": 1.306,
+      "p75": 2.472,
+      "p90": 4.37
+    }
+  },
+  "classes": {
+    "core": {
+      "n": 1415,
+      "p10": 0.686,
+      "p50": 1.169,
+      "p90": 2.55,
+      "mean": 1.436,
+      "min_factor": 0.55,
+      "max_factor": 1.8,
+      "area_min_km2": 0.686,
+      "area_max_km2": 2.55
+    },
+    "urban": {
+      "n": 589,
+      "p10": 0.801,
+      "p50": 1.632,
+      "p90": 3.527,
+      "mean": 2.059,
+      "min_factor": 0.55,
+      "max_factor": 1.8,
+      "area_min_km2": 0.801,
+      "area_max_km2": 3.527
+    },
+    "town": {
+      "n": 409,
+      "p10": 1.231,
+      "p50": 2.843,
+      "p90": 7.025,
+      "mean": 3.678,
+      "min_factor": 0.55,
+      "max_factor": 1.8,
+      "area_min_km2": 1.231,
+      "area_max_km2": 7.025
+    },
+    "rural": {
+      "n": 175,
+      "p10": 1.611,
+      "p50": 6.29,
+      "p90": 18.121,
+      "mean": 8.581,
+      "min_factor": 0.55,
+      "max_factor": 1.8,
+      "area_min_km2": 1.611,
+      "area_max_km2": 18.121
+    },
+    "remote": {
+      "label": "沙漠/高原等稀疏区",
+      "mean": 75.7,
+      "derived": true,
+      "min_factor": 0.55,
+      "max_factor": 1.8,
+      "max_km2": 250.0,
+      "area_min_km2": 10.0,
+      "area_max_km2": 250.0
+    }
+  },
+  "area_tolerance": {
+    "min_factor": 0.55,
+    "max_factor": 1.8,
+    "note": "zones may be 45% smaller or 80% larger than the class mean to keep OSM boundaries"
+  },
+  "count_policy": "area-ranges-only"
+}

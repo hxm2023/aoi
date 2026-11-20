@@ -1,0 +1,12 @@
+[
+  "area_km2",
+  "pp",
+  "road_density",
+  "poi_density",
+  "building_density",
+  "urban_score",
+  "lu_built",
+  "urban_share",
+  "block_count",
+  "perimeter"
+]

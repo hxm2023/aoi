@@ -1,0 +1,60 @@
+{
+ "points": 184212,
+ "lines": 53357,
+ "baseline_all_point_precision": 0.0762,
+ "baseline_all_km": 18421.2,
+ "baseline_major_water_rail_point_precision": 0.0897,
+ "baseline_major_water_rail_km": 7887.7,
+ "baseline_major_soft_point_precision": 0.0719,
+ "baseline_major_soft_km": 14120.3,
+ "selection": [
+  {
+   "quantile": 0.9,
+   "threshold": 0.1533,
+   "segments": 1501,
+   "selected_km": 621.4,
+   "segment_precision@25": 0.1237,
+   "ref_coverage@25": 0.0319
+  },
+  {
+   "quantile": 0.95,
+   "threshold": 0.2665,
+   "segments": 676,
+   "selected_km": 264.0,
+   "segment_precision@25": 0.1133,
+   "ref_coverage@25": 0.0139
+  },
+  {
+   "quantile": 0.97,
+   "threshold": 0.3087,
+   "segments": 392,
+   "selected_km": 141.4,
+   "segment_precision@25": 0.1227,
+   "ref_coverage@25": 0.0087
+  },
+  {
+   "quantile": 0.98,
+   "threshold": 0.3359,
+   "segments": 262,
+   "selected_km": 90.8,
+   "segment_precision@25": 0.0986,
+   "ref_coverage@25": 0.0053
+  },
+  {
+   "quantile": 0.99,
+   "threshold": 0.3748,
+   "segments": 116,
+   "selected_km": 39.8,
+   "segment_precision@25": 0.0809,
+   "ref_coverage@25": 0.0017
+  }
+ ],
+ "best": {
+  "quantile": 0.9,
+  "threshold": 0.1533,
+  "segments": 1501,
+  "selected_km": 621.4,
+  "segment_precision@25": 0.1237,
+  "ref_coverage@25": 0.0319
+ }
+}

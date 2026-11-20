@@ -1,0 +1,36 @@
+{
+  "version": "scene-v1",
+  "rows": 24689,
+  "features": 31,
+  "classes": [
+    "campus",
+    "commercial",
+    "health",
+    "industrial",
+    "institution",
+    "residential",
+    "rural",
+    "scenic",
+    "transport"
+  ],
+  "grouped_cv_accuracy": 0.5762,
+  "grouped_cv_macro_f1": 0.2082,
+  "per_city": {
+    "东莞": 2884,
+    "中山": 1616,
+    "佛山": 2622,
+    "广州": 5827,
+    "惠州": 2082,
+    "揭阳": 188,
+    "梅州": 1138,
+    "汕头": 90,
+    "汕尾": 242,
+    "江门": 638,
+    "河源": 746,
+    "深圳": 3618,
+    "清远": 844,
+    "潮州": 196,
+    "珠海": 1923,
+    "韶关": 35
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "source": "Guangdong reference aggregate · county 鼎湖",
+  "level": "county",
+  "name": "鼎湖",
+  "parent": "肇庆",
+  "n_zones": 76,
+  "area_km2": 553.8,
+  "density_metric": "road_km_per_km2",
+  "thresholds": {
+    "core_min": 6.39,
+    "urban_min": 2.33,
+    "rural_min": 0.15
+  },
+  "density_stats": {
+    "core": {
+      "n": 6609,
+      "p05": 3.888,
+      "p10": 5.159,
+      "p25": 7.627,
+      "p50": 10.981,
+      "p75": 15.675,
+      "p90": 21.956
+    },
+    "urban_town": {
+      "n": 1325,
+      "p05": 1.477,
+      "p10": 2.192,
+      "p25": 3.416,
+      "p50": 5.208,
+      "p75": 7.353,
+      "p90": 10.062
+    },
+    "rural": {
+      "n": 7733,
+      "p05": 0.148,
+      "p10": 0.304,
+      "p25": 0.646,
+      "p50": 1.306,
+      "p75": 2.472,
+      "p90": 4.37
+    }
+  },
+  "classes": {
+    "core": {
+      "n": 15,
+      "p10": 0.45,
+      "p50": 1.27,
+      "p90": 2.158,
+      "mean": 1.215,
+      "min_factor": 0.55,
+      "max_factor": 1.8,
+      "area_min_km2": 0.45,
+      "area_max_km2": 2.158
+    },
+    "urban": {
+      "n": 39,
+      "p10": 0.667,
+      "p50": 1.744,
+      "p90": 2.969,
+      "mean": 1.93,
+      "min_factor": 0.55,
+      "max_factor": 1.8,
+      "area_min_km2": 0.667,
+      "area_max_km2": 2.969
+    },
+    "town": {
+      "n": 7,
+      "p10": 0.857,
+      "p50": 3.196,
+      "p90": 9.787,
+      "mean": 4.277,
+      "min_factor": 0.55,
+      "max_factor": 1.8,
+      "area_min_km2": 0.857,
+      "area_max_km2": 9.787
+    },
+    "rural": {
+      "n": 50,
+      "p10": 3.292,
+      "p50": 8.117,
+      "p90": 18.794,
+      "mean": 9.957,
+      "min_factor": 0.55,
+      "max_factor": 1.8,
+      "area_min_km2": 3.292,
+      "area_max_km2": 18.794
+    },
+    "remote": {
+      "label": "沙漠/高原等稀疏区",
+      "mean": 75.7,
+      "derived": true,
+      "min_factor": 0.55,
+      "max_factor": 1.8,
+      "max_km2": 250.0,
+      "area_min_km2": 10.0,
+      "area_max_km2": 250.0
+    }
+  },
+  "area_tolerance": {
+    "min_factor": 0.55,
+    "max_factor": 1.8,
+    "note": "zones may be 45% smaller or 80% larger than the class mean to keep OSM boundaries"
+  },
+  "count_policy": "area-ranges-only"
+}

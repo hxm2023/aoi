@@ -1,0 +1,25 @@
+{
+  "version": "oracle-merge-v1",
+  "n_pairs": 40285,
+  "cities": [
+    "东莞",
+    "中山",
+    "佛山",
+    "广州",
+    "惠州",
+    "江门",
+    "清远",
+    "珠海",
+    "韶关"
+  ],
+  "metrics": {
+    "n": 40285,
+    "positive_rate": 0.5623,
+    "grouped_cv_auc": 0.9144,
+    "grouped_cv_pr_auc": 0.9284,
+    "precision@0.5": 0.8036,
+    "recall@0.5": 0.863,
+    "f1@0.5": 0.8323
+  },
+  "features": 103
+}

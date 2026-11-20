@@ -1,0 +1,105 @@
+{
+  "source": "Guangdong reference aggregate · county 陆丰",
+  "level": "county",
+  "name": "陆丰",
+  "parent": "汕尾",
+  "n_zones": 200,
+  "area_km2": 1701.5,
+  "density_metric": "road_km_per_km2",
+  "thresholds": {
+    "core_min": 6.39,
+    "urban_min": 2.33,
+    "rural_min": 0.15
+  },
+  "density_stats": {
+    "core": {
+      "n": 6609,
+      "p05": 3.888,
+      "p10": 5.159,
+      "p25": 7.627,
+      "p50": 10.981,
+      "p75": 15.675,
+      "p90": 21.956
+    },
+    "urban_town": {
+      "n": 1325,
+      "p05": 1.477,
+      "p10": 2.192,
+      "p25": 3.416,
+      "p50": 5.208,
+      "p75": 7.353,
+      "p90": 10.062
+    },
+    "rural": {
+      "n": 7733,
+      "p05": 0.148,
+      "p10": 0.304,
+      "p25": 0.646,
+      "p50": 1.306,
+      "p75": 2.472,
+      "p90": 4.37
+    }
+  },
+  "classes": {
+    "core": {
+      "n": 19,
+      "p10": 0.613,
+      "p50": 0.873,
+      "p90": 1.176,
+      "mean": 0.897,
+      "min_factor": 0.55,
+      "max_factor": 1.8,
+      "area_min_km2": 0.613,
+      "area_max_km2": 1.176
+    },
+    "urban": {
+      "n": 28,
+      "p10": 0.69,
+      "p50": 1.25,
+      "p90": 2.829,
+      "mean": 1.637,
+      "min_factor": 0.55,
+      "max_factor": 1.8,
+      "area_min_km2": 0.69,
+      "area_max_km2": 2.829
+    },
+    "town": {
+      "n": 25,
+      "p10": 0.811,
+      "p50": 1.354,
+      "p90": 2.111,
+      "mean": 1.396,
+      "min_factor": 0.55,
+      "max_factor": 1.8,
+      "area_min_km2": 0.811,
+      "area_max_km2": 2.111
+    },
+    "rural": {
+      "n": 128,
+      "p10": 4.331,
+      "p50": 9.597,
+      "p90": 23.179,
+      "mean": 12.529,
+      "min_factor": 0.55,
+      "max_factor": 1.8,
+      "area_min_km2": 4.331,
+      "area_max_km2": 23.179
+    },
+    "remote": {
+      "label": "沙漠/高原等稀疏区",
+      "mean": 75.7,
+      "derived": true,
+      "min_factor": 0.55,
+      "max_factor": 1.8,
+      "max_km2": 250.0,
+      "area_min_km2": 10.0,
+      "area_max_km2": 250.0
+    }
+  },
+  "area_tolerance": {
+    "min_factor": 0.55,
+    "max_factor": 1.8,
+    "note": "zones may be 45% smaller or 80% larger than the class mean to keep OSM boundaries"
+  },
+  "count_policy": "area-ranges-only"
+}
