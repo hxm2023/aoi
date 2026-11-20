@@ -1,0 +1,292 @@
+{
+  "city": "中山",
+  "zones": 538,
+  "points": 170836,
+  "tol_m": 15.0,
+  "unexplained_length_frac": 0.4944,
+  "runs": 5660,
+  "run_length": {
+    "n": 5660,
+    "p10": 50.0,
+    "p50": 200.0,
+    "p90": 825.0,
+    "mean": 367.509
+  },
+  "run_chord": {
+    "n": 5660,
+    "p10": 24.622,
+    "p50": 149.024,
+    "p90": 709.464,
+    "mean": 299.207
+  },
+  "run_sinuosity": {
+    "n": 5660,
+    "p10": 1.081,
+    "p50": 1.264,
+    "p90": 2.04,
+    "mean": 1.406
+  },
+  "run_max_dev": {
+    "n": 5660,
+    "p10": 0.0,
+    "p50": 0.0,
+    "p90": 72.56,
+    "mean": 31.492
+  },
+  "endpoint_both_osm_frac": 0.5329,
+  "run_one_end_osm_frac": 0.341,
+  "nearest_feature": {
+    "building": {
+      "all_le10": 0.0079,
+      "unexplained_le10": 0.0056,
+      "unexplained_le25": 0.0128
+    },
+    "landuse_poly": {
+      "all_le10": 0.1088,
+      "unexplained_le10": 0.0596,
+      "unexplained_le25": 0.1478
+    },
+    "admin_L8": {
+      "all_le10": 0.0499,
+      "unexplained_le10": 0.0542,
+      "unexplained_le25": 0.0996
+    },
+    "admin_L10": {
+      "all_le10": 0.0244,
+      "unexplained_le10": 0.0148,
+      "unexplained_le25": 0.0304
+    }
+  },
+  "by_scene": {
+    "core": {
+      "points": 58082,
+      "unexplained_frac": 0.35,
+      "runs": 1893,
+      "run_length": {
+        "n": 1893,
+        "p10": 50.0,
+        "p50": 150.0,
+        "p90": 575.0,
+        "mean": 261.675
+      },
+      "sinuosity": {
+        "n": 1893,
+        "p10": 1.104,
+        "p50": 1.337,
+        "p90": 2.073,
+        "mean": 1.464
+      },
+      "max_dev_m": {
+        "n": 1893,
+        "p10": 0.0,
+        "p50": 0.0,
+        "p90": 38.303,
+        "mean": 18.421
+      },
+      "endpoint_osm_frac": 0.5848
+    },
+    "urban": {
+      "points": 38126,
+      "unexplained_frac": 0.4597,
+      "runs": 1355,
+      "run_length": {
+        "n": 1355,
+        "p10": 50.0,
+        "p50": 175.0,
+        "p90": 725.0,
+        "mean": 318.063
+      },
+      "sinuosity": {
+        "n": 1355,
+        "p10": 1.095,
+        "p50": 1.291,
+        "p90": 2.034,
+        "mean": 1.414
+      },
+      "max_dev_m": {
+        "n": 1355,
+        "p10": 0.0,
+        "p50": 0.0,
+        "p90": 74.119,
+        "mean": 25.442
+      },
+      "endpoint_osm_frac": 0.5048
+    },
+    "town": {
+      "points": 5267,
+      "unexplained_frac": 0.5284,
+      "runs": 222,
+      "run_length": {
+        "n": 222,
+        "p10": 50.0,
+        "p50": 150.0,
+        "p90": 650.0,
+        "mean": 308.671
+      },
+      "sinuosity": {
+        "n": 222,
+        "p10": 1.102,
+        "p50": 1.332,
+        "p90": 2.117,
+        "mean": 1.5
+      },
+      "max_dev_m": {
+        "n": 222,
+        "p10": 0.0,
+        "p50": 0.0,
+        "p90": 69.805,
+        "mean": 27.237
+      },
+      "endpoint_osm_frac": 0.5225
+    },
+    "rural": {
+      "points": 69361,
+      "unexplained_frac": 0.6319,
+      "runs": 2190,
+      "run_length": {
+        "n": 2190,
+        "p10": 50.0,
+        "p50": 250.0,
+        "p90": 1225.0,
+        "mean": 495.548
+      },
+      "sinuosity": {
+        "n": 2190,
+        "p10": 1.061,
+        "p50": 1.203,
+        "p90": 2.009,
+        "mean": 1.342
+      },
+      "max_dev_m": {
+        "n": 2190,
+        "p10": 0.0,
+        "p50": 0.0,
+        "p90": 112.247,
+        "mean": 46.965
+      },
+      "endpoint_osm_frac": 0.5064
+    }
+  },
+  "top_zones": [
+    {
+      "zone_idx": 479,
+      "unexplained_km": 30.775,
+      "name": "南船带",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 462,
+      "unexplained_km": 20.375,
+      "name": "英拜",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 442,
+      "unexplained_km": 17.575,
+      "name": "新平四村周边",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 468,
+      "unexplained_km": 17.55,
+      "name": "雅髻山",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 535,
+      "unexplained_km": 17.475,
+      "name": "二门槛",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 438,
+      "unexplained_km": 17.375,
+      "name": "义仓村委会",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 452,
+      "unexplained_km": 15.85,
+      "name": "谭仔环鱼塘",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 415,
+      "unexplained_km": 15.75,
+      "name": "大中下南村",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 399,
+      "unexplained_km": 14.925,
+      "name": "荣丰西巷",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 478,
+      "unexplained_km": 14.825,
+      "name": "白石坳茶场",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 443,
+      "unexplained_km": 14.5,
+      "name": "沿江村",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 481,
+      "unexplained_km": 13.7,
+      "name": "五桂山林场田心园艺场",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 207,
+      "unexplained_km": 13.25,
+      "name": "胜龙村",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 446,
+      "unexplained_km": 12.575,
+      "name": "横门工业区",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 449,
+      "unexplained_km": 12.4,
+      "name": "龙窟",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 408,
+      "unexplained_km": 12.225,
+      "name": "永丰一队",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 461,
+      "unexplained_km": 12.2,
+      "name": "山塘围山",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 451,
+      "unexplained_km": 11.975,
+      "name": "沙朗北巷",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 469,
+      "unexplained_km": 11.8,
+      "name": "中穗街",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 436,
+      "unexplained_km": 11.675,
+      "name": "吴栏",
+      "scene": "rural"
+    }
+  ]
+}

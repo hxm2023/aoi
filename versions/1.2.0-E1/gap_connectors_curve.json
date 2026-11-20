@@ -1,0 +1,41 @@
+{
+  "runs": 4890,
+  "both": {
+    "runs": 4890,
+    "length_km": 2041.6,
+    "length_frac_of_unexplained": 1.0,
+    "covered20_length_frac": 0.5038,
+    "cover20_mean": 0.7438,
+    "cover20_p50": 1.0,
+    "covered20_curve_length_frac": 0.4464,
+    "length": {
+      "n": 4890,
+      "p10": 75.0,
+      "p50": 225.0,
+      "p90": 925.0,
+      "mean": 417.505
+    }
+  },
+  "by_scene": {
+    "乡镇镇区": {
+      "runs": 185,
+      "length_km": 66.7,
+      "covered20_length_frac": 0.5039
+    },
+    "农村": {
+      "runs": 1965,
+      "length_km": 1074.0,
+      "covered20_length_frac": 0.4575
+    },
+    "核心城区": {
+      "runs": 1571,
+      "length_km": 479.2,
+      "covered20_length_frac": 0.5793
+    },
+    "非核心城区": {
+      "runs": 1169,
+      "length_km": 421.7,
+      "covered20_length_frac": 0.5357
+    }
+  }
+}

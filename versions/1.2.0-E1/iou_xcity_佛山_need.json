@@ -1,0 +1,21 @@
+{
+ "city": "佛山",
+ "ours": 1469,
+ "refs": 1231,
+ "ours_area_km2": 3862.0,
+ "refs_area_km2": 3804.8,
+ "pairs": 6358,
+ "iou_ref_best_mean": 0.322,
+ "iou_greedy_1_1": 0.3422,
+ "matched": 1015,
+ "matched_frac": 0.8245,
+ "iou_allref": 0.2821,
+ "area_p50_ours": 1.701,
+ "area_p50_ref": 1.828,
+ "boundary_precision@10m": 0.0922,
+ "boundary_recall@10m": 0.1111,
+ "boundary_f1@10m": 0.1008,
+ "boundary_precision@25m": 0.1836,
+ "boundary_recall@25m": 0.2152,
+ "boundary_f1@25m": 0.1981
+}

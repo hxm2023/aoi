@@ -1,0 +1,21 @@
+{
+ "city": "中山",
+ "ours": 528,
+ "refs": 538,
+ "ours_area_km2": 1755.1,
+ "refs_area_km2": 1748.6,
+ "pairs": 2460,
+ "iou_ref_best_mean": 0.2831,
+ "iou_greedy_1_1": 0.3223,
+ "matched": 380,
+ "matched_frac": 0.7063,
+ "iou_allref": 0.2276,
+ "area_p50_ours": 1.98,
+ "area_p50_ref": 1.882,
+ "boundary_precision@10m": 0.1009,
+ "boundary_recall@10m": 0.1422,
+ "boundary_f1@10m": 0.1181,
+ "boundary_precision@25m": 0.1941,
+ "boundary_recall@25m": 0.2581,
+ "boundary_f1@25m": 0.2216
+}

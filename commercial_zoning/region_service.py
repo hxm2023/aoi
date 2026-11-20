@@ -420,8 +420,8 @@ def _cached_unit_file(name):
         return None
     # Delivery server (no version pin): use the newest pre-generated unit.
     for nm in names:
-        cands = list((CACHE / "agg_units").glob(
-            f"{prefix}{nm}-density-*.geojson"))
+        cands = [p for p in (CACHE / "agg_units").glob(
+            f"{prefix}{nm}-density-*.geojson") if "-refined-" not in p.stem]
         if cands:
             cands.sort(key=lambda p: p.stat().st_mtime, reverse=True)
             return cands[0]
@@ -4584,6 +4584,113 @@ def generate_guangdong_aggregate(bbox, force=False, scope="province",
             "geojson": str(zones_path), "meta": meta}
 
 
+def _preferred_unit_file(admin_name):
+    """Curated delivery unit (already refined) shipped with the package."""
+    if not admin_name:
+        return None
+    unit = _strip_admin(admin_name) or admin_name
+    names = [unit]
+    if not unit.endswith(("市", "县", "区", "州")):
+        names.append(unit + "市")
+    for un in names:
+        for d in (CACHE / "agg_units", ROOT / "precomputed"):
+            for suf in ("-density-delivery.geojson",
+                        "-density-final.geojson"):
+                p = d / f"{un}{suf}"
+                if p.exists():
+                    return p
+    return None
+
+
+def _refined_unit_file(up, admin_name, bbox, progress=None):
+    """Refine a pre-generated unit to the delivery recipe (1.4.3 base +
+    learned merge + OSM densification + gap sealing).  Results are cached
+    under cache/agg_units so the existing loader finds them; lines are
+    cached separately.  Set XGB_UNIT_REFINE=0 to disable."""
+    src = Path(up)
+    if (src.stem.endswith("-refined") or "-refined-" in src.stem
+            or "-delivery" in src.stem):
+        return src
+    if os.environ.get("XGB_UNIT_REFINE", "1") != "1":
+        return src
+    unit = _strip_admin(admin_name) or admin_name or src.stem.split("-density")[0]
+    basever = os.environ.get("XGB_UNIT_REFINE_BASE", "1.4.3")
+    base = src
+    if basever:
+        names = [unit]
+        if not unit.endswith(("市", "县", "区", "州")):
+            names.append(unit + "市")
+        if admin_name:
+            names.append(admin_name)
+        for un in names:
+            cand = CACHE / "agg_units" / f"{un}-density-{basever}.geojson"
+            if cand.exists():
+                base = cand
+                break
+    mfiles = [MODELS / "merge_gain_model.json",
+              MODELS / "features_merge_gain.json",
+              MODELS / "zone_need_model.json",
+              MODELS / "zone_need_model_nzs.json",
+              MODELS / "features_zone_need.json"]
+    stamps = [str(base.stat().st_mtime_ns)] + [
+        str(p.stat().st_mtime_ns) if p.exists() else "0" for p in mfiles]
+    params = "|".join((
+        os.environ.get("XGB_REFINE_MERGE_FRAC", "0.0413"),
+        os.environ.get("XGB_REFINE_NEED_THR", "0.90"),
+        os.environ.get("XGB_REFINE_NEED_MIN_AREA", "5"),
+        os.environ.get("XGB_SERVICE_VERSION", "1.3.7")))
+    h = hashlib.sha1(("|".join(stamps) + "|" + params).encode()).hexdigest()[:10]
+    prefix = base.stem.split("-density")[0]
+    out = CACHE / "agg_units" / f"{prefix}-density-{basever}-refined-{h}.geojson"
+    if out.exists():
+        return out
+    _report(progress, 35, "精炼缓存单元")
+    z = gpd.read_file(base)
+    b = tuple(float(x) for x in z.total_bounds)
+    lhash = hashlib.sha1(
+        (str(b) + "|" + os.environ.get("XGB_SERVICE_VERSION", "1.3.7")
+         ).encode()).hexdigest()[:10]
+    ldir = CACHE / "agg_refined" / f"lines-{lhash}"
+    ldir.mkdir(parents=True, exist_ok=True)
+    lp = ldir / "lines.geojson"
+    if not lp.exists() or lp.stat().st_size < 300:
+        try:
+            from .providers import resolve as resolve_pbf
+            from .prepare_lines import build_lines
+        except ImportError:
+            from commercial_zoning.providers import resolve as resolve_pbf
+            from commercial_zoning.prepare_lines import build_lines
+        pbf = resolve_pbf(b)
+        os.environ["XGB_PBF"] = pbf
+        build_lines(b, lp)
+    lines = gpd.read_file(lp)
+    old = {k: os.environ.get(k) for k in (
+        "XGB_MERGE_FRAC", "XGB_NEED_THR", "XGB_NEED_MIN_AREA",
+        "XGB_NEED_MODEL")}
+    if (MODELS / "zone_need_model_nzs.json").exists():
+        os.environ["XGB_NEED_MODEL"] = os.environ.get(
+            "XGB_REFINE_NEED_MODEL", "zone_need_model_nzs.json")
+    os.environ["XGB_MERGE_FRAC"] = os.environ.get(
+        "XGB_REFINE_MERGE_FRAC", "0.0413")
+    os.environ["XGB_NEED_THR"] = os.environ.get(
+        "XGB_REFINE_NEED_THR", "0.90")
+    os.environ["XGB_NEED_MIN_AREA"] = os.environ.get(
+        "XGB_REFINE_NEED_MIN_AREA", "5")
+    try:
+        zz = _merge_refine_calibrate(z, lines)
+        zz = _need_split_calibrate(zz, lines)
+    finally:
+        for k, v in old.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    zz.to_file(out, driver="GeoJSON")
+    print(f"[unit-refine] {base.name} -> {out.name} ({len(zz)} zones)",
+          flush=True)
+    return out
+
+
 def generate_region(bbox, force=False, city_mode=False, scope=None,
                     admin_name=None, level=None, center=None, progress=None,
                     target_count=None, quick=False):
@@ -4636,8 +4743,12 @@ def generate_region(bbox, force=False, city_mode=False, scope=None,
                     print(f"[budget] scale fallback skipped: {_bexc}")
     _ref = _target_meta(admin_name) if admin_name else None
     if scope in ("county", "city", "province") and admin_name and not force:
-        up = _cached_unit_file(admin_name)
+        up = _preferred_unit_file(admin_name) or _cached_unit_file(admin_name)
         if up is not None:
+            try:
+                up = _refined_unit_file(up, admin_name, bbox, progress)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[unit-refine] skipped: {exc}", flush=True)
             try:
                 zu = gpd.read_file(up)
                 land = (zu[zu["kind"].eq("land")]

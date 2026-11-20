@@ -1,0 +1,21 @@
+{
+ "city": "韶关",
+ "ours": 930,
+ "refs": 743,
+ "ours_area_km2": 18410.5,
+ "refs_area_km2": 18423.3,
+ "pairs": 3926,
+ "iou_ref_best_mean": 0.3048,
+ "iou_greedy_1_1": 0.3496,
+ "matched": 570,
+ "matched_frac": 0.7672,
+ "iou_allref": 0.2682,
+ "area_p50_ours": 22.767,
+ "area_p50_ref": 17.72,
+ "boundary_precision@10m": 0.0373,
+ "boundary_recall@10m": 0.047,
+ "boundary_f1@10m": 0.0416,
+ "boundary_precision@25m": 0.083,
+ "boundary_recall@25m": 0.1027,
+ "boundary_f1@25m": 0.0918
+}

@@ -1,0 +1,21 @@
+{
+ "city": "东莞",
+ "ours": 1213,
+ "refs": 1357,
+ "ours_area_km2": 2441.7,
+ "refs_area_km2": 2446.4,
+ "pairs": 6059,
+ "iou_ref_best_mean": 0.307,
+ "iou_greedy_1_1": 0.3487,
+ "matched": 970,
+ "matched_frac": 0.7148,
+ "iou_allref": 0.2493,
+ "area_p50_ours": 1.772,
+ "area_p50_ref": 1.279,
+ "boundary_precision@10m": 0.1069,
+ "boundary_recall@10m": 0.1112,
+ "boundary_f1@10m": 0.109,
+ "boundary_precision@25m": 0.2139,
+ "boundary_recall@25m": 0.2159,
+ "boundary_f1@25m": 0.2149
+}

@@ -1,0 +1,45 @@
+{
+ "label": "B29",
+ "zones": 502,
+ "area_p10_p50_p90": [
+  0.687,
+  3.138,
+  7.14
+ ],
+ "area_min": 0.208,
+ "aspect_gt3": 36,
+ "aspect_gt4": 10,
+ "aspect_gt5": 3,
+ "aspect_max": 6.95,
+ "rings": 0,
+ "multiparts": 0,
+ "class_mix": {
+  "core": {
+   "zones": 215,
+   "area_km2": 412.9,
+   "area_p50": 1.42
+  },
+  "rural": {
+   "zones": 180,
+   "area_km2": 1042.1,
+   "area_p50": 5.41
+  },
+  "town": {
+   "zones": 8,
+   "area_km2": 40.7,
+   "area_p50": 4.48
+  },
+  "urban": {
+   "zones": 99,
+   "area_km2": 279.2,
+   "area_p50": 2.6
+  }
+ },
+ "boundary_within10": 0.762,
+ "boundary_within25": 0.799,
+ "boundary_unexplained": 0.201,
+ "boundary_median_m": 0.0,
+ "straight_unexplained_frac": 0.214,
+ "straight_unexplained_km": 1047.8,
+ "n_long_unexplained_edges": 1149
+}
