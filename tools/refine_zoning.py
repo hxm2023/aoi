@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import os
 import sys
 from pathlib import Path
 
@@ -220,6 +221,12 @@ def main():
             geometry="geometry", crs=ALBERS).reset_index(drop=True)
     nsplit = 0
     if not a.no_need:
+        try:
+            import commercial_zoning.region_service as _rs
+            os.environ["XGB_AREA_BUDGET"] = str(a.budget)
+            _rs._AREA_BUDGET = None
+        except Exception:  # noqa: BLE001
+            pass
         old_thr = os.environ.get("XGB_NEED_THR")
         old_ma = os.environ.get("XGB_NEED_MIN_AREA")
         os.environ["XGB_NEED_THR"] = str(a.need_thr)

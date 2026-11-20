@@ -690,7 +690,9 @@ def _key(b, city_mode=False, variant=""):
         "XGB_P50_CORE_FACTOR", "XGB_P50_URBAN_FACTOR",
         "XGB_P50_RURAL_MIN_FACTOR", "XGB_POST_SMALL_MERGE",
         "XGB_NEED_SPLIT", "XGB_NEED_THR", "XGB_NEED_MIN_AREA",
-        "XGB_NEED_MODEL", "XGB_MERGE_REFINE", "XGB_MERGE_FRAC",
+        "XGB_NEED_MODEL", "XGB_NEED_CLASS_AWARE", "XGB_NEED_MIN_LINE",
+        "XGB_NEED_URBAN_RULE", "XGB_NEED_URBAN_MIN", "XGB_NEED_RURAL_MIN",
+        "XGB_MERGE_REFINE", "XGB_MERGE_FRAC",
         "XGB_MERGE_MIN_COMPACT",
         "XGB_ART_SPLIT", "XGB_ART_MIN_AREA", "XGB_ART_TOP",
         "XGB_ART_TRIALS", "XGB_ART_MIN_HEUR", "XGB_ART_HARD_GAP"))
@@ -3830,6 +3832,10 @@ def _osm_area_calibrate(z, lines, class_shares=None):
         lambda g: _poly(shapely.make_valid(g)) if g is not None else None)
     m = m[m.geometry.notna() & ~m.geometry.is_empty].reset_index(drop=True)
     lm = lines.to_crs(utm)
+    if "klass" in lm.columns:
+        _lk = lm["klass"].astype(str)
+        lm = lm[_lk.isin(["major", "soft", "water", "water_poly",
+                          "stream", "river", "rail"])]
     ltr = shapely.STRtree(np.asarray(lm.geometry.values, dtype=object))
     rows = []
     nsplit = 0
@@ -3988,6 +3994,10 @@ def _p50_class_calibrate(z, lines, class_shares=None, core_factor=None,
         lambda g: _poly(shapely.make_valid(g)) if g is not None else None)
     m = m[m.geometry.notna() & ~m.geometry.is_empty].reset_index(drop=True)
     lm = lines.to_crs(utm)
+    if "klass" in lm.columns:
+        _lk = lm["klass"].astype(str)
+        lm = lm[_lk.isin(["major", "soft", "water", "water_poly",
+                          "stream", "river", "rail"])]
     ltr = shapely.STRtree(np.asarray(lm.geometry.values, dtype=object))
     rows = []
     nsplit = 0
@@ -4115,7 +4125,7 @@ def _artificial_heuristic_calibrate(z, lines):
     """
     if z is None or not len(z) or lines is None or not len(lines):
         return z
-    if os.environ.get("XGB_ART_SPLIT", "1") != "1":
+    if os.environ.get("XGB_ART_SPLIT", "0") != "1":
         return z
     try:
         from .ring_fix import fill_empty_rings
@@ -4308,6 +4318,24 @@ def _need_split_calibrate(z, lines):
         from commercial_zoning.ring_fix import _cut_by_network, fill_empty_rings
     th = float(os.environ.get("XGB_NEED_THR", "0.80"))
     mina = float(os.environ.get("XGB_NEED_MIN_AREA", "2.5"))
+    _bud = area_budget() or {}
+    _bth = _bud.get("thresholds", {})
+    _bcls = _bud.get("classes", {})
+    core_p50 = float(_bcls.get("core", {}).get("p50", 2.0))
+    urban_p50 = float(_bcls.get("urban", {}).get("p50", 2.2))
+    rural_p90 = float(_bcls.get("rural", {}).get("p90", 14.0))
+    class_aware = os.environ.get("XGB_NEED_CLASS_AWARE", "1") == "1"
+    min_line = float(os.environ.get("XGB_NEED_MIN_LINE", "200"))
+
+    def cclass(d):
+        if d >= float(_bth.get("core_min", 7.0)):
+            return "core"
+        if d >= float(_bth.get("urban_min", 2.5)):
+            return "urban"
+        if d >= float(_bth.get("rural_min", 0.15)):
+            return "rural"
+        return "remote"
+
     feats = json.loads(fp.read_text(encoding="utf-8"))
     model = xgb.XGBClassifier()
     model.load_model(str(mp))
@@ -4322,6 +4350,10 @@ def _need_split_calibrate(z, lines):
             tab[c] = m[c].to_numpy() if c in m.columns else 0.0
     prob = model.predict_proba(tab[feats].astype(float).fillna(0.0))[:, 1]
     lm = lines.to_crs(utm)
+    if "klass" in lm.columns:
+        lk2 = lm["klass"].astype(str)
+        lm = lm[lk2.isin(["major", "soft", "water", "water_poly",
+                          "stream", "river", "rail"])]
     ltr = shapely.STRtree(np.asarray(lm.geometry.values, dtype=object))
     rows = []
     nsplit = 0
@@ -4329,7 +4361,50 @@ def _need_split_calibrate(z, lines):
         g = r.geometry
         if g is None or g.is_empty:
             continue
-        if prob[i] < th or g.area / 1e6 < mina:
+        dens = float(r.get("road_density") or 0.0)
+        ccls = cclass(dens)
+        us = float(r.get("urban_score") or 0.0)
+        # Dense village lanes can look like "core" by road density while the
+        # settlement itself is low-rise; do not densify those into grids.
+        if os.environ.get("XGB_NEED_URBAN_RULE", "1") == "1":
+            _umin = float(os.environ.get("XGB_NEED_URBAN_MIN", "0.35"))
+            _rmin = float(os.environ.get("XGB_NEED_RURAL_MIN", "0.20"))
+            if ccls == "core" and us < _umin:
+                ccls = "urban"
+            if ccls == "urban" and us < _rmin:
+                ccls = "rural"
+        req_area = mina
+        need_thr = th
+        req_line = min_line
+        if class_aware:
+            if ccls in ("rural", "remote"):
+                req_area = max(mina, 0.8 * rural_p90)
+                if ccls == "remote":
+                    req_area = max(req_area, 20.0)
+                need_thr = max(th, 0.75)
+                req_line = max(min_line, 500.0)
+            elif ccls == "urban":
+                req_area = max(mina, 1.4 * urban_p50)
+            else:
+                req_area = max(mina, 1.4 * core_p50)
+        if prob[i] < need_thr or g.area / 1e6 < req_area:
+            rows.append(dict(r))
+            continue
+        # OSM evidence: only cut where a usable strong line actually runs
+        # through the zone.  This keeps OSM-sparse rural/mountain zones as
+        # one interpretable polygon instead of inventing small cells.
+        try:
+            gb = g.buffer(-5.0)
+            inner_len = 0.0
+            for jj in ltr.query(gb, predicate="intersects"):
+                q = lm.geometry.iloc[int(jj)].intersection(gb)
+                if q.geom_type == "LineString":
+                    inner_len += q.length
+                elif q.geom_type == "MultiLineString":
+                    inner_len += sum(x.length for x in q.geoms)
+        except Exception:  # noqa: BLE001
+            inner_len = 0.0
+        if inner_len < req_line:
             rows.append(dict(r))
             continue
         try:
@@ -4345,6 +4420,28 @@ def _need_split_calibrate(z, lines):
             continue
         ar = [q.area / 1e6 for q in parts]
         if min(ar) / max(ar) < 0.15:
+            rows.append(dict(r))
+            continue
+        # The cut itself must be a long, line-following border; short strips
+        # between weak lines should not create new cells.
+        if os.environ.get("XGB_NEED_CUT_EVIDENCE", "0") != "1":
+            nsplit += 1
+            for q in parts:
+                nr = dict(r); nr["geometry"] = q; rows.append(nr)
+            continue
+        try:
+            shared = parts[0].boundary.intersection(parts[1].boundary)
+            cut_len = sum(q.length for q in shapely.get_parts(shared)
+                          if q.geom_type == "LineString")
+            xy = shapely.get_coordinates(shapely.segmentize(shared, 25.0))
+            if len(xy):
+                dd2 = _nearest_line_dist(ltr, xy)
+                near = float((dd2 <= 20.0).mean())
+            else:
+                near = 0.0
+        except Exception:  # noqa: BLE001
+            cut_len, near = 0.0, 0.0
+        if cut_len < max(250.0, req_line * 0.75) or near < 0.5:
             rows.append(dict(r))
             continue
         nsplit += 1
