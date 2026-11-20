@@ -4388,6 +4388,11 @@ def _need_split_calibrate(z, lines):
                 req_area = max(mina, 1.4 * urban_p50)
             else:
                 req_area = max(mina, 1.4 * core_p50)
+        if class_aware and ccls in ("rural", "remote"):
+            # Natural/rural areas stay whole: weak OSM lines are not used
+            # as new cut boundaries there.
+            rows.append(dict(r))
+            continue
         if prob[i] < need_thr or g.area / 1e6 < req_area:
             rows.append(dict(r))
             continue
