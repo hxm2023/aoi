@@ -692,6 +692,7 @@ def _key(b, city_mode=False, variant=""):
         "XGB_NEED_SPLIT", "XGB_NEED_THR", "XGB_NEED_MIN_AREA",
         "XGB_NEED_MODEL", "XGB_NEED_CLASS_AWARE", "XGB_NEED_MIN_LINE",
         "XGB_NEED_URBAN_RULE", "XGB_NEED_URBAN_MIN", "XGB_NEED_RURAL_MIN",
+        "XGB_NEED_MIN_COMPACT", "XGB_NEED_CONSOLIDATE",
         "XGB_MERGE_REFINE", "XGB_MERGE_FRAC",
         "XGB_MERGE_MIN_COMPACT",
         "XGB_ART_SPLIT", "XGB_ART_MIN_AREA", "XGB_ART_TOP",
@@ -4353,7 +4354,7 @@ def _need_split_calibrate(z, lines):
     if "klass" in lm.columns:
         lk2 = lm["klass"].astype(str)
         lm = lm[lk2.isin(["major", "soft", "water", "water_poly",
-                          "stream", "river", "rail"])]
+                          "river", "rail"])]
     ltr = shapely.STRtree(np.asarray(lm.geometry.values, dtype=object))
     rows = []
     nsplit = 0
@@ -4422,6 +4423,12 @@ def _need_split_calibrate(z, lines):
         if min(ar) / max(ar) < 0.15:
             rows.append(dict(r))
             continue
+        _mc = float(os.environ.get("XGB_NEED_MIN_COMPACT", "0.18"))
+        _comps = [4 * np.pi * q.area / max(q.length ** 2, 1e-9)
+                  for q in parts]
+        if min(_comps) < _mc:
+            rows.append(dict(r))
+            continue
         # The cut itself must be a long, line-following border; short strips
         # between weak lines should not create new cells.
         if os.environ.get("XGB_NEED_CUT_EVIDENCE", "0") != "1":
@@ -4451,6 +4458,85 @@ def _need_split_calibrate(z, lines):
             rows.append(nr)
     m = gpd.GeoDataFrame(rows, geometry="geometry", crs=utm).reset_index(
         drop=True)
+    if os.environ.get("XGB_NEED_CONSOLIDATE", "1") == "1":
+        try:
+            def _ccls_row(rr):
+                dd = float(rr.get("road_density") or 0.0)
+                cc = cclass(dd)
+                uu = float(rr.get("urban_score") or 0.0)
+                if os.environ.get("XGB_NEED_URBAN_RULE", "1") == "1":
+                    if cc == "core" and uu < float(os.environ.get(
+                            "XGB_NEED_URBAN_MIN", "0.35")):
+                        cc = "urban"
+                    if cc == "urban" and uu < float(os.environ.get(
+                            "XGB_NEED_RURAL_MIN", "0.20")):
+                        cc = "rural"
+                return cc
+            _minA = {"core": max(0.25, 0.5 * core_p50),
+                     "urban": max(0.35, 0.5 * urban_p50)}
+            _maxA = {"core": max(0.60, 1.5 * core_p50),
+                     "urban": max(0.90, 1.5 * urban_p50)}
+            for _p in range(2):
+                gs = list(m.geometry)
+                ms = m.drop(columns="geometry").to_dict("records")
+                tree2 = shapely.STRtree(np.asarray(gs, dtype=object))
+                alive = np.ones(len(gs), bool)
+                moved = 0
+                for ii in range(len(gs)):
+                    if not alive[ii]:
+                        continue
+                    gi = gs[ii]
+                    if gi is None or gi.is_empty:
+                        continue
+                    ci = _ccls_row(ms[ii])
+                    if ci not in _minA:
+                        continue
+                    if gi.area / 1e6 >= _minA[ci]:
+                        continue
+                    best2 = None
+                    for jj in tree2.query(gi, predicate="intersects"):
+                        jj = int(jj)
+                        if jj == ii or not alive[jj]:
+                            continue
+                        if _ccls_row(ms[jj]) != ci:
+                            continue
+                        gj = gs[jj]
+                        try:
+                            sh2 = gi.boundary.intersection(
+                                gj.boundary).length
+                        except Exception:  # noqa: BLE001
+                            continue
+                        if sh2 < 30.0:
+                            continue
+                        try:
+                            u2 = shapely.buffer(shapely.make_valid(
+                                shapely.union_all([gi, gj])), 0)
+                        except Exception:  # noqa: BLE001
+                            continue
+                        if u2 is None or u2.geom_type != "Polygon":
+                            continue
+                        if u2.area / 1e6 > _maxA[ci]:
+                            continue
+                        cp2 = 4 * np.pi * u2.area / max(u2.length ** 2, 1e-9)
+                        if cp2 < 0.30:
+                            continue
+                        if best2 is None or sh2 > best2[0]:
+                            best2 = (sh2, jj, u2)
+                    if best2 is not None:
+                        _, jj, u2 = best2
+                        gs[jj] = u2
+                        alive[ii] = False
+                        moved += 1
+                keep = [k for k in range(len(gs)) if alive[k]]
+                m = gpd.GeoDataFrame(
+                    [dict(ms[k], geometry=gs[k]) for k in keep],
+                    geometry="geometry", crs=utm).reset_index(drop=True)
+                if not moved:
+                    break
+                print(f"[need-consolidate] merged {moved}, left {len(m)}",
+                      flush=True)
+        except Exception as _ce:  # noqa: BLE001
+            print(f"[need-consolidate] skipped: {_ce}")
     m = fill_empty_rings(m)
     m = m[m.geometry.notna() & ~m.geometry.is_empty].reset_index(drop=True)
     m = m[m.area / 1e6 >= 0.01].reset_index(drop=True)
