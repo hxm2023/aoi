@@ -104,7 +104,7 @@ def main():
             title = f"{name} · {len(g)} 区"
             draw(ax, sub, ref, bounds, title)
         fig.suptitle(
-            f"中山市分区对比 · 红色=广东移动标准边界 · "
+            f"{a.city.rstrip('市')}市分区对比 · 红色=广东移动标准边界 · "
             f"{'全图' if vname == 'full' else vname}", fontsize=13)
         fig.tight_layout()
         p = out / f"e1_{vname}.png"

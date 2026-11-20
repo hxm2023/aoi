@@ -1,0 +1,292 @@
+{
+  "city": "深圳",
+  "zones": 1707,
+  "points": 362262,
+  "tol_m": 15.0,
+  "unexplained_length_frac": 0.4595,
+  "runs": 12382,
+  "run_length": {
+    "n": 12382,
+    "p10": 50.0,
+    "p50": 150.0,
+    "p90": 725.0,
+    "mean": 328.84
+  },
+  "run_chord": {
+    "n": 12382,
+    "p10": 24.335,
+    "p50": 120.902,
+    "p90": 524.545,
+    "mean": 233.11
+  },
+  "run_sinuosity": {
+    "n": 12382,
+    "p10": 1.127,
+    "p50": 1.382,
+    "p90": 2.097,
+    "mean": 1.568
+  },
+  "run_max_dev": {
+    "n": 12382,
+    "p10": 0.0,
+    "p50": 0.0,
+    "p90": 98.217,
+    "mean": 36.606
+  },
+  "endpoint_both_osm_frac": 0.5406,
+  "run_one_end_osm_frac": 0.3543,
+  "nearest_feature": {
+    "building": {
+      "all_le10": 0.0381,
+      "unexplained_le10": 0.0287,
+      "unexplained_le25": 0.0655
+    },
+    "landuse_poly": {
+      "all_le10": 0.2347,
+      "unexplained_le10": 0.211,
+      "unexplained_le25": 0.4112
+    },
+    "admin_L8": {
+      "all_le10": 0.0491,
+      "unexplained_le10": 0.0495,
+      "unexplained_le25": 0.1089
+    },
+    "admin_L10": {
+      "all_le10": 0.0405,
+      "unexplained_le10": 0.0101,
+      "unexplained_le25": 0.0245
+    }
+  },
+  "by_scene": {
+    "core": {
+      "points": 328176,
+      "unexplained_frac": 0.4231,
+      "runs": 11475,
+      "run_length": {
+        "n": 11475,
+        "p10": 50.0,
+        "p50": 150.0,
+        "p90": 650.0,
+        "mean": 295.181
+      },
+      "sinuosity": {
+        "n": 11475,
+        "p10": 1.131,
+        "p50": 1.385,
+        "p90": 2.102,
+        "mean": 1.531
+      },
+      "max_dev_m": {
+        "n": 11475,
+        "p10": 0.0,
+        "p50": 0.0,
+        "p90": 88.641,
+        "mean": 30.685
+      },
+      "endpoint_osm_frac": 0.5467
+    },
+    "urban": {
+      "points": 534,
+      "unexplained_frac": 0.5037,
+      "runs": 25,
+      "run_length": {
+        "n": 25,
+        "p10": 60.0,
+        "p50": 175.0,
+        "p90": 585.0,
+        "mean": 261.0
+      },
+      "sinuosity": {
+        "n": 25,
+        "p10": 1.154,
+        "p50": 1.517,
+        "p90": 2.051,
+        "mean": 1.521
+      },
+      "max_dev_m": {
+        "n": 25,
+        "p10": 0.0,
+        "p50": 1.759,
+        "p90": 66.207,
+        "mean": 21.156
+      },
+      "endpoint_osm_frac": 0.68
+    },
+    "town": {
+      "points": 8625,
+      "unexplained_frac": 0.6841,
+      "runs": 348,
+      "run_length": {
+        "n": 348,
+        "p10": 50.0,
+        "p50": 200.0,
+        "p90": 975.0,
+        "mean": 415.661
+      },
+      "sinuosity": {
+        "n": 348,
+        "p10": 1.115,
+        "p50": 1.421,
+        "p90": 2.107,
+        "mean": 1.936
+      },
+      "max_dev_m": {
+        "n": 348,
+        "p10": 0.0,
+        "p50": 0.0,
+        "p90": 163.747,
+        "mean": 56.21
+      },
+      "endpoint_osm_frac": 0.4741
+    },
+    "rural": {
+      "points": 24927,
+      "unexplained_frac": 0.8607,
+      "runs": 534,
+      "run_length": {
+        "n": 534,
+        "p10": 75.0,
+        "p50": 300.0,
+        "p90": 2410.0,
+        "mean": 998.736
+      },
+      "sinuosity": {
+        "n": 534,
+        "p10": 1.089,
+        "p50": 1.303,
+        "p90": 1.979,
+        "mean": 2.111
+      },
+      "max_dev_m": {
+        "n": 534,
+        "p10": 0.0,
+        "p50": 6.88,
+        "p90": 405.265,
+        "mean": 151.781
+      },
+      "endpoint_osm_frac": 0.4476
+    }
+  },
+  "top_zones": [
+    {
+      "zone_idx": 1134,
+      "unexplained_km": 71.15,
+      "name": "八角坑山",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 1170,
+      "unexplained_km": 53.85,
+      "name": "南风洲",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 1131,
+      "unexplained_km": 47.6,
+      "name": "排牙山",
+      "scene": "core"
+    },
+    {
+      "zone_idx": 1157,
+      "unexplained_km": 45.25,
+      "name": "红罗上径",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 358,
+      "unexplained_km": 33.575,
+      "name": "马峦山郊野公园",
+      "scene": "core"
+    },
+    {
+      "zone_idx": 1164,
+      "unexplained_km": 33.35,
+      "name": "清林径水库",
+      "scene": "core"
+    },
+    {
+      "zone_idx": 1169,
+      "unexplained_km": 32.825,
+      "name": "掘尾龙岭南",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 364,
+      "unexplained_km": 31.425,
+      "name": "七娘山",
+      "scene": "core"
+    },
+    {
+      "zone_idx": 1195,
+      "unexplained_km": 31.2,
+      "name": "石凹水库",
+      "scene": "core"
+    },
+    {
+      "zone_idx": 1179,
+      "unexplained_km": 28.0,
+      "name": "红花岭",
+      "scene": "core"
+    },
+    {
+      "zone_idx": 1162,
+      "unexplained_km": 23.325,
+      "name": "笔架山",
+      "scene": "core"
+    },
+    {
+      "zone_idx": 328,
+      "unexplained_km": 23.025,
+      "name": "梧桐山风景区",
+      "scene": "core"
+    },
+    {
+      "zone_idx": 1229,
+      "unexplained_km": 22.925,
+      "name": "三角山东",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 1177,
+      "unexplained_km": 22.525,
+      "name": "大鹏半岛",
+      "scene": "core"
+    },
+    {
+      "zone_idx": 1153,
+      "unexplained_km": 20.875,
+      "name": "狮山",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 1213,
+      "unexplained_km": 20.3,
+      "name": "三洲田水库",
+      "scene": "core"
+    },
+    {
+      "zone_idx": 1135,
+      "unexplained_km": 18.125,
+      "name": "鹅颈水库",
+      "scene": "core"
+    },
+    {
+      "zone_idx": 1173,
+      "unexplained_km": 17.8,
+      "name": "三门岛",
+      "scene": "rural"
+    },
+    {
+      "zone_idx": 348,
+      "unexplained_km": 17.55,
+      "name": "铜锣径林场一",
+      "scene": "core"
+    },
+    {
+      "zone_idx": 1158,
+      "unexplained_km": 16.5,
+      "name": "田仔尾",
+      "scene": "rural"
+    }
+  ]
+}
