@@ -5709,6 +5709,11 @@ def load_geojson(key):
         if q.exists():
             p = q
     if not p.exists():
+        # Curated delivery unit shipped with the package.
+        q = ROOT / "precomputed" / f"{key}.geojson"
+        if q.exists():
+            p = q
+    if not p.exists():
         raise FileNotFoundError(key)
     import json as _json
     return _json.loads(p.read_text(encoding="utf-8"))
