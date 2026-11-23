@@ -1,0 +1,169 @@
+{
+  "release": "aoi 1.4.7",
+  "city": "深圳",
+  "model": {
+    "dir": "commercial_zoning/models/sz_reflabel_clean",
+    "features": 46,
+    "tile_cv_auc": 0.7987,
+    "tile_cv_ap": 0.8902
+  },
+  "final": {
+    "zones": 1674,
+    "iou": 0.56,
+    "matched_frac": 0.8799,
+    "boundary_f1_25m": 0.4274,
+    "area_ks": 0.1334,
+    "composite": 0.7436,
+    "holes": 0,
+    "zone_in_zone": 0,
+    "multipart_after_repair": 0
+  },
+  "leak_correction": "An earlier 47-feature ref-label model included label_zone_orig (upper same-zone indicator); its OOF 0.9422 and final IoU 0.6019 were leak-inflated and are superseded by the 46-feature model here.",
+  "comparison": {
+    "upper_labels_same_base": {
+      "oof_auc": 0.8025,
+      "oof_ap": 0.916,
+      "final": {
+        "zones": 1692,
+        "iou": 0.5479,
+        "matched": 0.9215,
+        "composite": 0.7405
+      }
+    },
+    "reference_labels_same_base": {
+      "oof_auc": 0.7987,
+      "oof_ap": 0.8902,
+      "final": {
+        "zones": 1674,
+        "iou": 0.56,
+        "matched": 0.8799,
+        "composite": 0.7436
+      }
+    },
+    "compliant_clean_base_1_4_8": {
+      "zones": 1804,
+      "iou": 0.544,
+      "matched": 0.9098,
+      "area_ks": 0.1248,
+      "composite": 0.7413
+    }
+  },
+  "reference_boundary_support": {
+    "samples": 195938,
+    "covered_frac": 0.6735,
+    "support": {
+      "major": 0.1269,
+      "landuse": 0.0783,
+      "tertiary": 0.0758,
+      "weak": 0.0715,
+      "admin": 0.0587,
+      "secondary": 0.0576,
+      "local": 0.0536,
+      "natural": 0.0449,
+      "rail": 0.0394,
+      "poi": 0.026,
+      "water": 0.0163,
+      "river": 0.0157,
+      "stream": 0.0089
+    },
+    "precision": {
+      "admin": 0.1029,
+      "landuse": 0.0476,
+      "local": 0.047,
+      "major": 0.2044,
+      "natural": 0.0209,
+      "poi": 0.0801,
+      "rail": 0.1127,
+      "river": 0.0753,
+      "secondary": 0.1688,
+      "stream": 0.0215,
+      "tertiary": 0.1287,
+      "water": 0.0254,
+      "weak": 0.0315
+    },
+    "tol": 15.0,
+    "step": 50.0
+  },
+  "face_straddle": {
+    "faces": 21384,
+    "mean_max_ref_frac": 0.933,
+    "faces_below_0.9": 4209,
+    "faces_below_0.7": 2038,
+    "faces_below_0.5": 373,
+    "face_area_km2_below_0.9": 983.8,
+    "faces_touching_2plus_ref": 8954,
+    "share_faces_touching_2plus": 41.87,
+    "share_area_touching_2plus": 70.64
+  },
+  "preprocess_qa": {
+    "info_complete_base": {
+      "file": "深圳-osm-lines-attr2-dedupe-v2.geojson",
+      "qa": {
+        "lines": 125751,
+        "endpoints": 251502,
+        "connected_1m": 227143,
+        "dangles": 24359,
+        "dangle_nearest": {
+          "1": 0,
+          "5": 23870,
+          "10": 23910,
+          "30": 23945,
+          ">30": 414
+        },
+        "dangle_frac": 0.0969,
+        "faces": 23332,
+        "faces_lt_0.02": 7010,
+        "faces_lt_0.05": 15972,
+        "face_area_p10": 0.0125,
+        "face_area_p50": 0.0303
+      }
+    },
+    "strict_oneline_base": {
+      "file": "深圳-osm-lines-oneline30-v3.geojson",
+      "qa": {
+        "lines": 137710,
+        "endpoints": 275420,
+        "connected_1m": 266056,
+        "dangles": 9364,
+        "dangle_nearest": {
+          "1": 0,
+          "5": 295,
+          "10": 416,
+          "30": 468,
+          ">30": 8896
+        },
+        "dangle_frac": 0.034,
+        "faces": 21537,
+        "faces_lt_0.02": 6155,
+        "faces_lt_0.05": 14633,
+        "face_area_p10": 0.0127,
+        "face_area_p50": 0.0309
+      },
+      "note": "±5m 同向一条线，跨特征合并，优先 landuse/admin/水系；≤30m 断口闭合；>30m 为真实尽头"
+    }
+  },
+  "duplicate_audit": {
+    "raw": {
+      "lines": 78512,
+      "segments": 2672863,
+      "share_parallel_5m": 0.5348,
+      "share_parallel_10m": 0.6306
+    },
+    "final_compliant": {
+      "lines": 144720,
+      "segments": 1777668,
+      "share_parallel_5m": 0.0822,
+      "share_parallel_10m": 0.2337
+    },
+    "note": "≤5m 近平行段占比从 53.5% 降到 8.2%（约 -85%）；10m 带宽从 63.1% 降到 23.4%，剩余 5–10m 近平行多为不同名街巷/宗地/铁路场真实并排设施。"
+  },
+  "delivery": {
+    "file": "深圳市-density-1.4.7-szclean-reflabel70.geojson",
+    "md5": "e98d8d6f2351edeba22fe64d96a06577",
+    "precomputed": "aoi_zoning_delivery/precomputed/深圳市-density-delivery.geojson",
+    "backups": [
+      "深圳市-density-delivery.c081-backup.geojson",
+      "深圳市-density-delivery.1.4.8-backup.geojson"
+    ]
+  }
+}
