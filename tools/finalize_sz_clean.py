@@ -29,6 +29,23 @@ def nholes(g):
                if q.geom_type == "Polygon")
 
 
+def clip_to_frame(geoms, frame, min_area=0.5):
+    keep_idx = []
+    out = []
+    for k, g in enumerate(geoms):
+        try:
+            c = shapely.make_valid(g.intersection(frame))
+        except Exception:  # noqa: BLE001
+            c = g
+        ps = [p for p in shapely.get_parts(c)
+              if p.geom_type == "Polygon" and p.area >= min_area]
+        if not ps:
+            continue
+        out.append(shapely.union_all(ps) if len(ps) > 1 else ps[0])
+        keep_idx.append(k)
+    return out, keep_idx
+
+
 def merge_enclaves(geoms):
     alive = np.ones(len(geoms), bool)
     tree = shapely.STRtree(np.asarray(geoms, dtype=object))
@@ -120,6 +137,10 @@ def main():
     ap.add_argument("--res", type=float, default=2.0)
     ap.add_argument("--simplify", type=float, default=0.0)
     ap.add_argument("--city", default="深圳")
+    ap.add_argument("--frame", default="",
+                    help="land frame GeoJSON (kind=land); default uses the reference footprint")
+    ap.add_argument("--clip", action="store_true",
+                    help="intersect zones with the frame before finalizing")
     a = ap.parse_args()
     z = gpd.read_file(a.src).to_crs(A)
     if "city" in z.columns:
@@ -128,8 +149,21 @@ def main():
     ref = load_reference(
         "aoi_zoning_delivery/data/reference/广东移动新版微网格20250420.csv",
         a.city).to_crs(A)
-    frame = shapely.union_all([shapely.make_valid(g) for g in ref.geometry])
+    if a.frame:
+        fg = gpd.read_file(a.frame).to_crs(A)
+        if "kind" in fg.columns:
+            fg = fg[fg["kind"].eq("land")]
+        fg = fg[fg.geometry.notna() & ~fg.geometry.is_empty]
+        frame = shapely.union_all([shapely.make_valid(g) for g in fg.geometry])
+        print("using land frame", a.frame, "km2",
+              round(float(frame.area) / 1e6, 1), flush=True)
+    else:
+        frame = shapely.union_all([shapely.make_valid(g) for g in ref.geometry])
     geoms = [shapely.make_valid(g) for g in z.geometry]
+    if a.clip:
+        geoms, keep_idx = clip_to_frame(geoms, frame)
+        attrs = attrs.iloc[keep_idx].reset_index(drop=True)
+        print("clipped to frame", len(geoms), "zones", flush=True)
     geoms, r1 = raster_fill(geoms, frame, res=a.res, step=2500.0,
                             margin=300.0)
     gdf = gpd.GeoDataFrame(attrs, geometry=geoms, crs=A)

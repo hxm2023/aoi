@@ -34,6 +34,23 @@ def elong(g):
         return 1.0
 
 
+def clip_to_frame(geoms, frame, min_area=0.5):
+    keep_idx = []
+    out = []
+    for k, g in enumerate(geoms):
+        try:
+            c = shapely.make_valid(g.intersection(frame))
+        except Exception:  # noqa: BLE001
+            c = g
+        ps = [p for p in shapely.get_parts(c)
+              if p.geom_type == "Polygon" and p.area >= min_area]
+        if not ps:
+            continue
+        out.append(shapely.union_all(ps) if len(ps) > 1 else ps[0])
+        keep_idx.append(k)
+    return out, keep_idx
+
+
 def absorb_elongated(geoms, cap=40.0, max_area=0.5, max_el=8.0):
     alive = np.ones(len(geoms), bool)
     tree = shapely.STRtree(np.asarray(geoms, dtype=object))
@@ -129,6 +146,10 @@ def main():
     ap.add_argument("--simplify", type=float, default=0.0)
     ap.add_argument("--elong", type=float, default=8.0)
     ap.add_argument("--elong-max-area", type=float, default=0.5)
+    ap.add_argument("--frame", default="",
+                    help="land frame GeoJSON (kind=land)")
+    ap.add_argument("--clip", action="store_true",
+                    help="intersect zones with the frame before repairing")
     a = ap.parse_args()
     z = gpd.read_file(a.src).to_crs(A)
     if "city" in z.columns:
@@ -136,8 +157,23 @@ def main():
     ref = load_reference(
         "aoi_zoning_delivery/data/reference/广东移动新版微网格20250420.csv",
         a.city).to_crs(A)
-    frame = shapely.union_all([shapely.make_valid(g) for g in ref.geometry])
+    if a.frame:
+        fgdf = gpd.read_file(a.frame).to_crs(A)
+        if "kind" in fgdf.columns:
+            fgdf = fgdf[fgdf["kind"].eq("land")]
+        fgdf = fgdf[fgdf.geometry.notna() & ~fgdf.geometry.is_empty]
+        frame = shapely.union_all([shapely.make_valid(g)
+                                   for g in fgdf.geometry])
+        print("land frame km2", round(float(frame.area) / 1e6, 1),
+              flush=True)
+    else:
+        frame = shapely.union_all([shapely.make_valid(g)
+                                   for g in ref.geometry])
     geoms = [shapely.make_valid(g) for g in z.geometry]
+    if a.clip:
+        geoms, keep_idx = clip_to_frame(geoms, frame)
+        z = z.iloc[keep_idx].reset_index(drop=True)
+        print("clipped to frame", len(geoms), "zones", flush=True)
     if a.simplify > 0:
         geoms = [shapely.simplify(g, a.simplify, preserve_topology=True)
                  for g in geoms]
