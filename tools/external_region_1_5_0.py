@@ -144,7 +144,7 @@ def main():
     ap.add_argument("--pbf", required=True)
     ap.add_argument("--bbox", required=True)
     ap.add_argument("--name", required=True)
-    ap.add_argument("--thr", type=float, default=0.7)
+    ap.add_argument("--thr", type=float, default=0.8)
     ap.add_argument("--out-dir", default="")
     a = ap.parse_args()
     b = tuple(float(x) for x in a.bbox.split(","))
