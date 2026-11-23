@@ -77,7 +77,7 @@ def main():
     with open(a.out, encoding="utf-8") as fh:
         fc = json.load(fh)
     fc["name"] = "aoi-1.4.7-shenzhen-land"
-    with open(a.out, "w", encoding="utf-8") as fh:
+    with open(a.out, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(fc, fh, ensure_ascii=False, separators=(",", ":"))
     row = {"src": a.src, "zones": len(z), "absorbed": int(n_abs),
            "dropped": n_drop, "holes_removed": int(n_holes),
