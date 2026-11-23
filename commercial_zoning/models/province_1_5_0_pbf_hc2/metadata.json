@@ -1,0 +1,8 @@
+{
+  "model": "province_1_5_0_pbf_hc2",
+  "features": 90,
+  "train_auc": 0.9843,
+  "rows": 568257,
+  "cities": 21,
+  "note": "deployment model trained on all Guangdong cities; city-disjoint AUC in province_1_5_0_pbf"
+}

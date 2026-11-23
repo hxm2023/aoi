@@ -1,0 +1,10 @@
+{
+  "tag": "test",
+  "zones": 5976,
+  "cities": 5,
+  "iou": 0.3062,
+  "matched": 0.6897,
+  "bF1": 0.1751,
+  "iou_allref": 0.2112,
+  "area_p50": 2.033
+}

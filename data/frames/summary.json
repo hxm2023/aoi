@@ -1,0 +1,128 @@
+[
+  {
+    "city": "深圳",
+    "source": "osm-admin",
+    "km2": 2427.2,
+    "parts": 4
+  },
+  {
+    "city": "广州",
+    "source": "osm-admin",
+    "km2": 7280.0,
+    "parts": 2
+  },
+  {
+    "city": "佛山",
+    "source": "osm-admin",
+    "km2": 3884.3,
+    "parts": 1
+  },
+  {
+    "city": "东莞",
+    "source": "osm-admin",
+    "km2": 2448.9,
+    "parts": 1
+  },
+  {
+    "city": "中山",
+    "source": "osm-admin",
+    "km2": 1756.4,
+    "parts": 3
+  },
+  {
+    "city": "珠海",
+    "source": "osm-admin",
+    "km2": 1724.7,
+    "parts": 33
+  },
+  {
+    "city": "惠州",
+    "source": "osm-admin",
+    "km2": 11355.3,
+    "parts": 2
+  },
+  {
+    "city": "江门",
+    "source": "osm-admin",
+    "km2": 10036.0,
+    "parts": 2
+  },
+  {
+    "city": "肇庆",
+    "source": "osm-admin",
+    "km2": 14798.3,
+    "parts": 1
+  },
+  {
+    "city": "清远",
+    "source": "osm-admin",
+    "km2": 19019.0,
+    "parts": 1
+  },
+  {
+    "city": "韶关",
+    "source": "osm-admin",
+    "km2": 18383.1,
+    "parts": 1
+  },
+  {
+    "city": "河源",
+    "source": "osm-admin",
+    "km2": 15648.0,
+    "parts": 1
+  },
+  {
+    "city": "梅州",
+    "source": "osm-admin",
+    "km2": 15837.3,
+    "parts": 1
+  },
+  {
+    "city": "汕头",
+    "source": "osm-admin",
+    "km2": 2219.1,
+    "parts": 2
+  },
+  {
+    "city": "汕尾",
+    "source": "osm-admin",
+    "km2": 4373.6,
+    "parts": 1
+  },
+  {
+    "city": "潮州",
+    "source": "osm-admin",
+    "km2": 3152.7,
+    "parts": 1
+  },
+  {
+    "city": "揭阳",
+    "source": "osm-admin",
+    "km2": 5262.1,
+    "parts": 1
+  },
+  {
+    "city": "湛江",
+    "source": "osm-admin",
+    "km2": 12544.5,
+    "parts": 10
+  },
+  {
+    "city": "茂名",
+    "source": "osm-admin",
+    "km2": 11345.4,
+    "parts": 5
+  },
+  {
+    "city": "阳江",
+    "source": "osm-admin",
+    "km2": 7887.7,
+    "parts": 1
+  },
+  {
+    "city": "云浮",
+    "source": "osm-admin",
+    "km2": 7771.1,
+    "parts": 1
+  }
+]

@@ -1,0 +1,17 @@
+[
+  {
+    "city": "清远",
+    "zones": 1207,
+    "raw_zones": 6,
+    "raw_iou": 0.2542,
+    "absorbed": 2181,
+    "enclave": 40,
+    "iou_greedy_1_1": 0.2593,
+    "matched_frac": 0.811,
+    "iou_allref": 0.2103,
+    "area_p50_ours": 8.157,
+    "area_p50_ref": 18.978,
+    "boundary_f1@25m": 0.1,
+    "file": "D:\\huawei-intern\\aoi_release\\commercial_zoning\\cache\\province_1_5_0\\results\\test_fold0\\清远.geojson"
+  }
+]

@@ -1,0 +1,17 @@
+[
+  {
+    "city": "肇庆",
+    "zones": 1487,
+    "raw_zones": 6,
+    "raw_iou": 0.2745,
+    "absorbed": 2302,
+    "enclave": 92,
+    "iou_greedy_1_1": 0.285,
+    "matched_frac": 0.812,
+    "iou_allref": 0.2315,
+    "area_p50_ours": 4.025,
+    "area_p50_ref": 8.933,
+    "boundary_f1@25m": 0.1065,
+    "file": "D:\\huawei-intern\\aoi_release\\commercial_zoning\\cache\\province_1_5_0\\results\\val_fold0\\肇庆.geojson"
+  }
+]

@@ -1,0 +1,68 @@
+{
+  "test_fold0": {
+    "cities": [
+      "东莞",
+      "惠州",
+      "揭阳",
+      "深圳",
+      "清远"
+    ],
+    "oof": {
+      "tag": "test",
+      "zones": 5976,
+      "cities": 5,
+      "iou": 0.3062,
+      "matched": 0.6897,
+      "bF1": 0.1751,
+      "iou_allref": 0.2112,
+      "area_p50": 2.033
+    },
+    "full": {
+      "tag": "full_test",
+      "zones": 5585,
+      "cities": 5,
+      "iou": 0.4825,
+      "matched": 0.8416,
+      "bF1": 0.2371,
+      "iou_allref": 0.4061,
+      "area_p50": 1.464
+    }
+  },
+  "val_fold0": {
+    "cities": [
+      "云浮",
+      "梅州",
+      "河源",
+      "肇庆"
+    ],
+    "oof": {
+      "tag": "val",
+      "zones": 4259,
+      "cities": 4,
+      "iou": 0.2835,
+      "matched": 0.8198,
+      "bF1": 0.1051,
+      "iou_allref": 0.2324,
+      "area_p50": 6.203
+    },
+    "full": {
+      "tag": "full_val",
+      "zones": 2766,
+      "cities": 4,
+      "iou": 0.365,
+      "matched": 0.7539,
+      "bF1": 0.1206,
+      "iou_allref": 0.2752,
+      "area_p50": 9.637
+    }
+  },
+  "auc": {
+    "regularized_city_disjoint": {
+      "train": 0.8335,
+      "val": 0.8127,
+      "test": 0.812,
+      "city_oof": 0.8102
+    },
+    "deep_deploy_train": 0.9843
+  }
+}

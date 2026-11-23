@@ -1,0 +1,5 @@
+*.geojson -text
+*.png -text
+*.ubj -text
+*.pkl -text
+*.zip -text

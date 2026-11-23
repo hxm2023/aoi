@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+data/china/*.pbf
+aoi_zoning_delivery/data/reference/*
+!aoi_zoning_delivery/data/reference/README.md
+commercial_zoning/cache/
+.DS_Store

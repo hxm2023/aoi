@@ -1,0 +1,10 @@
+{
+  "tag": "val",
+  "zones": 4259,
+  "cities": 4,
+  "iou": 0.2835,
+  "matched": 0.8198,
+  "bF1": 0.1051,
+  "iou_allref": 0.2324,
+  "area_p50": 6.203
+}
