@@ -1,0 +1,5 @@
+{
+  "city": "珠海",
+  "default_threshold": 0.8,
+  "model": "province_1_5_0_pbf_hc2"
+}

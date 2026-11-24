@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>广东 OSM 微网格分区 1.5.0</title>
+<link href="/web/vendor/maplibre-gl.css" rel="stylesheet"/>
+<style>
+  html,body{margin:0;height:100%;font-family:system-ui,"Microsoft YaHei",sans-serif;color:#111827}
+  #app{display:flex;height:100%}
+  #side{width:320px;padding:18px;box-sizing:border-box;background:#f8fafc;border-right:1px solid #e5e7eb}
+  h1{font-size:17px;margin:0 0 4px}
+  p.sub{font-size:12px;color:#6b7280;margin:0 0 16px;line-height:1.6}
+  label{display:block;font-size:12px;color:#374151;margin:12px 0 4px}
+  select,button,input{width:100%;padding:8px;border:1px solid #d1d5db;border-radius:8px;background:#fff;font-size:13px;box-sizing:border-box}
+  button.primary{background:#2563eb;color:#fff;border-color:#2563eb;cursor:pointer}
+  button.primary:disabled{opacity:.55;cursor:wait}
+  #status{font-size:12px;color:#374151;margin-top:12px;line-height:1.7}
+  #stats{font-size:12px;color:#111827;margin-top:10px;line-height:1.8}
+  #model{font-size:11px;color:#6b7280;margin-top:18px;line-height:1.7;border-top:1px solid #e5e7eb;padding-top:10px}
+  #map{flex:1}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="side">
+    <h1>广东 OSM 微网格分区 1.5.0</h1>
+    <p class="sub">选择城市 → 在线运行 90 特征省级 XGB → 后处理 → 边界展示。
+      演示内置深圳、中山、珠海；其他城市可扩展缓存。</p>
+    <label>城市</label>
+    <select id="city"><option value="">加载中…</option></select>
+    <label>合并阈值 <span id="thrv" style="color:#6b7280"></span></label>
+    <input id="thr" type="range" min="0.5" max="0.95" step="0.01" value="0.8"/>
+    <button id="gen" class="primary" style="margin-top:10px">生成分区</button>
+    <div id="status">等待生成。</div>
+    <div id="stats"></div>
+    <div id="model"></div>
+  </aside>
+  <div id="map"></div>
+</div>
+<script src="/web/vendor/maplibre-gl.js"></script>
+<script>
+const EMPTY = {type:"FeatureCollection",features:[]};
+const map = new maplibregl.Map({
+  container:"map",
+  style:{version:8,sources:{},layers:[{id:"bg",type:"background",paint:{"background-color":"#f1f5f9"}}]},
+  center:[113.6,23.3], zoom:7,
+  preserveDrawingBuffer:true
+});
+map.addControl(new maplibregl.NavigationControl(),"top-right");
+const statusEl=document.getElementById("status");
+const statsEl=document.getElementById("stats");
+const cityEl=document.getElementById("city");
+const thrEl=document.getElementById("thr");
+const thrv=document.getElementById("thrv");
+let regions=[];
+let current=null;
+let result=null;
+
+function ensure(){
+  if(!map.isStyleLoaded()) return false;
+  if(!map.getSource("zones")){
+    map.addSource("zones",{type:"geojson",data:EMPTY});
+    map.addLayer({id:"zones-hit",type:"fill",source:"zones",paint:{"fill-color":"#000","fill-opacity":0}});
+    map.addLayer({id:"zones-halo",type:"line",source:"zones",paint:{
+      "line-color":"#ffffff","line-width":3.2,"line-opacity":0.9,
+      "line-join":"round","line-cap":"round"}});
+    map.addLayer({id:"zones-line",type:"line",source:"zones",paint:{
+      "line-color":"#0f172a","line-width":1.25,"line-opacity":0.98,
+      "line-join":"round","line-cap":"round"}});
+  }
+  return true;
+}
+map.on("load",ensure);
+
+function setThresholdLabel(){thrv.textContent=Number(thrEl.value).toFixed(2);}
+thrEl.oninput=setThresholdLabel;
+
+fetch("/api/regions").then(r=>r.json()).then(d=>{
+  regions=d.regions||[];
+  cityEl.innerHTML='<option value="">选择城市…</option>'+
+    regions.map(r=>`<option value="${r.city}">${r.city}</option>`).join("");
+  if(regions.length){cityEl.value=regions[0].city;onCity();}
+}).catch(()=>{cityEl.innerHTML='<option value="">区域目录加载失败</option>'});
+
+function onCity(){
+  const r=regions.find(x=>x.city===cityEl.value);
+  if(!r) return;
+  current=r;
+  thrEl.value=String(r.default_threshold??0.8);setThresholdLabel();
+  statusEl.textContent=`已选择 ${r.city}，点击“生成分区”。`;
+}
+cityEl.onchange=onCity;
+
+document.getElementById("gen").onclick=async()=>{
+  if(!current){statusEl.textContent="请先选择城市";return;}
+  const btn=document.getElementById("gen");
+  btn.disabled=true;statusEl.textContent="推理与后处理中…";statsEl.innerHTML="";
+  try{
+    const t0=Date.now();
+    const url=`/api/zones/${encodeURIComponent(current.city)}?threshold=${Number(thrEl.value)}`;
+    const res=await fetch(url);
+    if(!res.ok){const j=await res.json().catch(()=>({}));throw new Error(j.detail||res.status);}
+    const d=await res.json();
+    if(!ensure()){await new Promise(r=>map.once("load",r));ensure();}
+    map.getSource("zones").setData(d.geojson);
+    result=d;
+    const s=d.stats;
+    statusEl.textContent=`完成 · ${s.zones} 区 · ${s.area_km2} km² · 用时 ${s.elapsed_s} s`;
+    statsEl.innerHTML=`<b>${s.city}</b><br/>分区：${s.zones}<br/>阈值：${s.threshold}<br/>`+
+      `目标面积 p50：${s.target_p50_km2} km²<br/>吸收阈值：${s.absorb_km2} km²<br/>`+
+      `洞：${s.holes} · 多部件：${s.multipart}`;
+    const b=new maplibregl.LngLatBounds();
+    const walk=c=>{if(typeof c[0]==="number")b.extend(c);else c.forEach(walk);};
+    d.geojson.features.forEach(f=>walk(f.geometry.coordinates));
+    if(!b.isEmpty())map.fitBounds(b,{padding:40,duration:500});
+  }catch(e){statusEl.textContent="生成失败："+e.message;}
+  finally{btn.disabled=false;}
+};
+
+fetch("/api/model").then(r=>r.json()).then(m=>{
+  document.getElementById("model").innerHTML=
+    `模型：${m.name}<br/>特征：${m.features} · 广东 ${m.scope}<br/>`+
+    `城市留出 AUC ${m.city_holdout_auc} · 2 km 瓦片 ${m.tile_cv_auc}`;
+}).catch(()=>{});
+</script>
+</body>
+</html>

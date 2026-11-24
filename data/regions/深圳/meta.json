@@ -1,0 +1,5 @@
+{
+  "city": "深圳",
+  "default_threshold": 0.7,
+  "model": "province_1_5_0_pbf_hc2"
+}
