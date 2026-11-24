@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>OSM 微网格分区 1.5.0</title>
+<link href="/web/vendor/maplibre-gl.css" rel="stylesheet"/>
+<style>
+  html,body{margin:0;height:100%;font-family:system-ui,"Microsoft YaHei",sans-serif;color:#111827}
+  #app{display:flex;height:100%}
+  #side{width:340px;padding:18px;box-sizing:border-box;background:#f8fafc;border-right:1px solid #e5e7eb;overflow-y:auto}
+  h1{font-size:17px;margin:0 0 4px}
+  p.sub{font-size:12px;color:#6b7280;margin:0 0 14px;line-height:1.6}
+  label{display:block;font-size:12px;color:#374151;margin:12px 0 4px}
+  select,button,input{width:100%;padding:8px;border:1px solid #d1d5db;border-radius:8px;background:#fff;font-size:13px;box-sizing:border-box}
+  button{cursor:pointer}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  button.primary{background:#2563eb;color:#fff;border-color:#2563eb;cursor:pointer;margin-top:12px}
+  button.primary:disabled{opacity:.55;cursor:wait}
+  .row{display:flex;gap:6px}
+  .row button{flex:1;padding:7px 4px}
+  button.tab.on{background:#e0ecff;border-color:#2563eb;color:#1d4ed8;font-weight:600}
+  .check{display:flex;align-items:center;gap:8px;font-size:12px;color:#374151;margin-top:14px}
+  .check input{width:auto;margin:0}
+  .hint{font-size:11px;color:#6b7280;margin-top:6px;line-height:1.6}
+  #progressWrap{height:4px;background:#e5e7eb;border-radius:2px;margin-top:10px;display:none}
+  #bar{height:4px;width:0;background:#2563eb;border-radius:2px;transition:width .3s}
+  #status{font-size:12px;color:#374151;margin-top:10px;line-height:1.7;white-space:pre-wrap}
+  #stats{font-size:12px;color:#111827;margin-top:10px;line-height:1.8}
+  #stats .kv{color:#6b7280}
+  #model{font-size:11px;color:#6b7280;margin-top:18px;line-height:1.7;border-top:1px solid #e5e7eb;padding-top:10px}
+  #map{flex:1}
+  .warn{color:#b45309}
+  .err{color:#b91c1c}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="side">
+    <h1>OSM 微网格分区 1.5.0</h1>
+    <p class="sub">选择地区后按完整推理流程生成：OSM 预处理 → 90 特征省级 XGB → 拓扑后处理 → 边界展示。首次运行需构建底图，可能耗时数分钟；同一地区调整阈值会复用缓存。</p>
+
+    <label>OSM 数据（省份 PBF）</label>
+    <select id="pbf"><option value="">加载中…</option></select>
+    <div id="pbfHint" class="hint"></div>
+
+    <label>地区选择</label>
+    <div class="row">
+      <button id="modeCity" class="tab on">城市</button>
+      <button id="modeBbox" class="tab">自定义范围</button>
+    </div>
+    <div id="cityWrap" style="margin-top:8px">
+      <select id="city"><option value="">选择城市…</option></select>
+    </div>
+    <div id="bboxWrap" style="display:none;margin-top:8px">
+      <button id="drawBtn">在地图上框选范围</button>
+      <div id="bboxText" class="hint">未选择范围</div>
+    </div>
+
+    <label>合并阈值 <span id="thrv" style="color:#6b7280"></span></label>
+    <input id="thr" type="range" min="0.5" max="0.95" step="0.01" value="0.8"/>
+
+    <label class="check"><input id="refToggle" type="checkbox" disabled/> 叠加标准方案并对比</label>
+    <div id="refHint" class="hint"></div>
+
+    <button id="gen" class="primary">生成分区</button>
+    <div id="progressWrap"><div id="bar"></div></div>
+    <div id="status">等待生成。</div>
+    <div id="stats"></div>
+    <div id="model"></div>
+  </aside>
+  <div id="map"></div>
+</div>
+<script src="/web/vendor/maplibre-gl.js"></script>
+<script>
+const EMPTY = {type:"FeatureCollection",features:[]};
+const map = new maplibregl.Map({
+  container:"map",
+  style:{version:8,sources:{},layers:[{id:"bg",type:"background",paint:{"background-color":"#f1f5f9"}}]},
+  center:[113.6,23.3], zoom:7,
+  preserveDrawingBuffer:true
+});
+map.addControl(new maplibregl.NavigationControl(),"top-right");
+
+const pbfEl=document.getElementById("pbf");
+const pbfHint=document.getElementById("pbfHint");
+const cityEl=document.getElementById("city");
+const cityWrap=document.getElementById("cityWrap");
+const bboxWrap=document.getElementById("bboxWrap");
+const drawBtn=document.getElementById("drawBtn");
+const bboxText=document.getElementById("bboxText");
+const modeCityBtn=document.getElementById("modeCity");
+const modeBboxBtn=document.getElementById("modeBbox");
+const thrEl=document.getElementById("thr");
+const thrv=document.getElementById("thrv");
+const refToggle=document.getElementById("refToggle");
+const refHint=document.getElementById("refHint");
+const genBtn=document.getElementById("gen");
+const statusEl=document.getElementById("status");
+const statsEl=document.getElementById("stats");
+const barEl=document.getElementById("bar");
+const progressWrap=document.getElementById("progressWrap");
+
+let catalog={pbfs:[],cities:[],reference:{available:false,cities:[]},max_bbox_km2:25000};
+let mode="city";
+let bbox=null;
+let drawMode=false;
+let drawing=false;
+let drawStart=null;
+let jobTimer=null;
+let lastCity=null;
+let refLoadedFor=null;
+
+function ensureLayers(){
+  if(!map.isStyleLoaded()) return false;
+  if(!map.getSource("cities")){
+    map.addSource("cities",{type:"geojson",data:EMPTY});
+    map.addLayer({id:"cities-line",type:"line",source:"cities",paint:{
+      "line-color":"#94a3b8","line-width":0.8,"line-opacity":0.75}});
+    map.addLayer({id:"cities-hit",type:"fill",source:"cities",paint:{
+      "fill-color":"#000","fill-opacity":0}});
+  }
+  if(!map.getSource("reference")){
+    map.addSource("reference",{type:"geojson",data:EMPTY});
+    map.addLayer({id:"reference-line",type:"line",source:"reference",layout:{
+      "line-join":"round","line-cap":"round"},paint:{
+      "line-color":"#dc2626","line-width":0.9,"line-opacity":0.8}});
+  }
+  if(!map.getSource("zones")){
+    map.addSource("zones",{type:"geojson",data:EMPTY});
+    map.addLayer({id:"zones-hit",type:"fill",source:"zones",paint:{
+      "fill-color":"#000","fill-opacity":0}});
+    map.addLayer({id:"zones-halo",type:"line",source:"zones",paint:{
+      "line-color":"#ffffff","line-width":3.2,"line-opacity":0.9,
+      "line-join":"round","line-cap":"round"}});
+    map.addLayer({id:"zones-line",type:"line",source:"zones",paint:{
+      "line-color":"#0f172a","line-width":1.25,"line-opacity":0.98,
+      "line-join":"round","line-cap":"round"}});
+  }
+  if(!map.getSource("selbox")){
+    map.addSource("selbox",{type:"geojson",data:EMPTY});
+    map.addLayer({id:"selbox-fill",type:"fill",source:"selbox",paint:{
+      "fill-color":"#2563eb","fill-opacity":0.06}});
+    map.addLayer({id:"selbox-line",type:"line",source:"selbox",paint:{
+      "line-color":"#2563eb","line-width":1.4,"line-dasharray":[2,2]}});
+  }
+  return true;
+}
+map.on("load",ensureLayers);
+
+function setThresholdLabel(){thrv.textContent=Number(thrEl.value).toFixed(2);}
+thrEl.oninput=setThresholdLabel;
+setThresholdLabel();
+
+function currentPbf(){return catalog.pbfs.find(p=>p.file===pbfEl.value)||null;}
+function guangdong(){const p=currentPbf();return !!(p&&p.guangdong);}
+
+function setMode(m){
+  mode=m;
+  modeCityBtn.classList.toggle("on",m==="city");
+  modeBboxBtn.classList.toggle("on",m==="bbox");
+  cityWrap.style.display=m==="city"?"block":"none";
+  bboxWrap.style.display=m==="bbox"?"block":"none";
+  if(m==="city"){stopDraw();}
+  updateRefState();
+}
+
+function cityDefault(city){
+  const c=catalog.cities.find(x=>x.city===city);
+  return c?Number(c.default_threshold??0.8):0.8;
+}
+
+function refAvailable(){
+  if(!catalog.reference.available) return false;
+  if(mode!=="city"||!guangdong()) return false;
+  const city=cityEl.value;
+  if(!city) return false;
+  const list=catalog.reference.cities||[];
+  return list.length===0||list.includes(city.replace("市",""));
+}
+
+function updateRefState(){
+  const ok=refAvailable();
+  refToggle.disabled=!ok;
+  if(!ok&&refToggle.checked){refToggle.checked=false;clearReference();}
+  if(!catalog.reference.available){
+    refHint.textContent="未检测到标准方案 CSV（放入 data/reference/ 后可叠加）。";
+    refHint.className="hint";
+  }else if(mode!=="city"){
+    refHint.textContent="标准方案按城市提供，自定义范围不支持对比。";
+    refHint.className="hint";
+  }else if(!ok){
+    refHint.textContent="当前城市不在标准方案中。";
+    refHint.className="hint";
+  }else{
+    refHint.textContent="勾选后显示标准方案红色边界，生成时计算 IoU 等对比指标。";
+    refHint.className="hint";
+  }
+}
+
+function onCity(){
+  const city=cityEl.value;
+  if(!city){updateRefState();lastCity=null;return;}
+  if(city!==lastCity){
+    thrEl.value=String(cityDefault(city));setThresholdLabel();lastCity=city;
+  }
+  updateRefState();
+  if(refToggle.checked) loadReference();
+}
+
+function clearReference(){
+  if(ensureLayers()&&map.getSource("reference")) map.getSource("reference").setData(EMPTY);
+  refLoadedFor=null;
+}
+
+async function loadReference(cityArg){
+  const city=cityArg||cityEl.value;
+  if(!city||(!refToggle.checked&&cityArg===undefined)){clearReference();return;}
+  try{
+    const res=await fetch(`/api/reference/zones?city=${encodeURIComponent(city)}`);
+    if(!res.ok) throw new Error((await res.json().catch(()=>({}))).detail||res.status);
+    const gj=await res.json();
+    if(!ensureLayers()){await new Promise(r=>map.once("load",r));ensureLayers();}
+    map.getSource("reference").setData(gj);
+    refLoadedFor=city;
+  }catch(e){
+    clearReference();
+    statusEl.innerHTML=`<span class="warn">标准方案加载失败：${e.message}</span>`;
+  }
+}
+refToggle.onchange=()=>{if(refToggle.checked)loadReference();else clearReference();};
+
+async function loadCatalog(){
+  const d=await (await fetch("/api/catalog")).json();
+  catalog=d;
+  const pbfs=d.pbfs||[];
+  if(!pbfs.length){
+    pbfEl.innerHTML='<option value="">未检测到 OSM 数据</option>';
+    pbfHint.innerHTML='<span class="warn">未检测到 OSM 数据。请将省份 PBF 放入 data/china/ 目录后刷新。</span>';
+    genBtn.disabled=true;
+    statusEl.innerHTML='<span class="warn">缺少 OSM 数据，无法生成分区。</span>';
+    refHint.textContent="未检测到标准方案 CSV（放入 data/reference/ 后可叠加）。";
+    return;
+  }
+  pbfEl.innerHTML=pbfs.map(p=>`<option value="${p.file}">${p.province_cn} · ${p.file}</option>`).join("");
+  const gd=pbfs.find(p=>p.guangdong);
+  pbfEl.value=(gd||pbfs[0]).file;
+  pbfHint.textContent=gd?"广东省数据可直接按城市选择。":"当前省份仅支持在地图上框选范围。";
+  if(gd){
+    cityEl.innerHTML=(d.cities||[]).map(c=>`<option value="${c.city}">${c.city}</option>`).join("");
+    cityEl.value=(d.cities&&d.cities.length)?d.cities[0].city:"";
+  }else{
+    cityEl.innerHTML='<option value="">当前省份无城市列表</option>';
+    setMode("bbox");
+  }
+  await loadFrames();
+  onCity();
+  onPbfChange();
+}
+
+async function loadFrames(){
+  try{
+    if(!guangdong()){if(map.getSource("cities"))map.getSource("cities").setData(EMPTY);return;}
+    const gj=await (await fetch("/api/frames")).json();
+    if(!ensureLayers()){await new Promise(r=>map.once("load",r));ensureLayers();}
+    map.getSource("cities").setData(gj);
+    const b=new maplibregl.LngLatBounds();
+    const walk=c=>{if(typeof c[0]==="number")b.extend(c);else c.forEach(walk);};
+    gj.features.forEach(f=>walk(f.geometry.coordinates));
+    if(!b.isEmpty())map.fitBounds(b,{padding:40,duration:400});
+  }catch(e){/* 城市轮廓仅用于选择 */}
+}
+
+function onPbfChange(){
+  if(!guangdong()){
+    if(mode==="city")setMode("bbox");
+    modeCityBtn.disabled=true;
+    cityEl.innerHTML='<option value="">当前省份无城市列表</option>';
+  }else{
+    modeCityBtn.disabled=false;
+    if(!cityEl.options.length||!cityEl.value){
+      cityEl.innerHTML=(catalog.cities||[]).map(c=>`<option value="${c.city}">${c.city}</option>`).join("");
+      cityEl.value=(catalog.cities&&catalog.cities.length)?catalog.cities[0].city:"";
+    }
+    if(mode!=="bbox")setMode("city");
+    loadFrames();
+    onCity();
+  }
+  updateRefState();
+}
+pbfEl.onchange=onPbfChange;
+cityEl.onchange=onCity;
+modeCityBtn.onclick=()=>{if(modeCityBtn.disabled)return;setMode("city");};
+modeBboxBtn.onclick=()=>setMode("bbox");
+
+function updateSelBox(start,end){
+  const w=Math.min(start[0],end[0]),e=Math.max(start[0],end[0]);
+  const s=Math.min(start[1],end[1]),n=Math.max(start[1],end[1]);
+  const p=[[w,s],[e,s],[e,n],[w,n],[w,s]];
+  if(ensureLayers())map.getSource("selbox").setData({type:"FeatureCollection",
+    features:[{type:"Feature",properties:{},geometry:{type:"Polygon",coordinates:[p]}}]});
+  return [w,s,e,n];
+}
+
+map.on("mousedown",e=>{
+  if(!drawMode)return;
+  drawing=true;drawStart=[e.lngLat.lng,e.lngLat.lat];
+  map.dragPan.disable();
+});
+map.on("mousemove",e=>{
+  if(!drawing)return;
+  updateSelBox(drawStart,[e.lngLat.lng,e.lngLat.lat]);
+});
+map.on("mouseup",e=>{
+  if(!drawing)return;
+  drawing=false;map.dragPan.enable();
+  const b=updateSelBox(drawStart,[e.lngLat.lng,e.lngLat.lat]);
+  drawStart=null;
+  if(Math.abs(b[2]-b[0])<1e-4||Math.abs(b[3]-b[1])<1e-4){
+    statusEl.textContent="框选范围过小，请重新框选。";
+    return;
+  }
+  bbox=b;
+  bboxText.textContent=`范围：${b[0].toFixed(4)}, ${b[1].toFixed(4)} → ${b[2].toFixed(4)}, ${b[3].toFixed(4)}`;
+  stopDraw();
+});
+function startDraw(){
+  drawMode=true;drawBtn.textContent="框选中…（在地图上拖拽）";
+  map.getCanvas().style.cursor="crosshair";
+  statusEl.textContent="在地图上按住并拖拽框选范围。";
+}
+function stopDraw(){
+  drawMode=false;drawing=false;map.dragPan.enable();
+  drawBtn.textContent="在地图上框选范围";
+  map.getCanvas().style.cursor="";
+}
+drawBtn.onclick=()=>{if(drawMode)stopDraw();else startDraw();};
+
+map.on("click","cities-hit",e=>{
+  if(drawMode||!guangdong())return;
+  const city=e.features&&e.features[0]&&e.features[0].properties.city;
+  if(!city)return;
+  setMode("city");
+  if(![...cityEl.options].some(o=>o.value===city)){
+    cityEl.add(new Option(city,city));
+  }
+  cityEl.value=city;onCity();
+});
+
+function fitGeojson(gj){
+  const b=new maplibregl.LngLatBounds();
+  const walk=c=>{if(typeof c[0]==="number")b.extend(c);else c.forEach(walk);};
+  gj.features.forEach(f=>{if(f.geometry&&f.geometry.coordinates)walk(f.geometry.coordinates);});
+  if(!b.isEmpty())map.fitBounds(b,{padding:40,duration:500});
+}
+
+function statRow(k,v,cls){
+  return `<div><span class="kv">${k}：</span>${v}</div>`;
+}
+
+async function startJob(){
+  if(!pbfEl.value){statusEl.innerHTML='<span class="warn">缺少 OSM 数据，无法生成。</span>';return;}
+  let region=null;
+  if(mode==="city"){
+    if(!cityEl.value){statusEl.textContent="请先选择城市。";return;}
+    region={kind:"city",city:cityEl.value};
+  }else{
+    if(!bbox){statusEl.textContent="请先在地图上框选范围。";return;}
+    region={kind:"bbox",bbox};
+  }
+  const compare=refToggle.checked&&!refToggle.disabled;
+  const body={pbf:pbfEl.value,region,threshold:Number(thrEl.value),compare};
+  genBtn.disabled=true;statsEl.innerHTML="";statusEl.textContent="提交任务…";
+  progressWrap.style.display="block";barEl.style.width="0%";
+  try{
+    const res=await fetch("/api/jobs",{method:"POST",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    if(!res.ok){const j=await res.json().catch(()=>({}));throw new Error(j.detail||res.status);}
+    const {jid}=await res.json();
+    poll(jid,compare,region.kind==="city"?region.city:null);
+  }catch(e){
+    statusEl.innerHTML=`<span class="err">生成失败：${e.message}</span>`;
+    genBtn.disabled=false;progressWrap.style.display="none";
+  }
+}
+
+async function poll(jid,compare,refCity){
+  try{
+    const j=await (await fetch(`/api/jobs/${jid}`)).json();
+    if(j.status==="queued"||j.status==="running"){
+      barEl.style.width=`${j.pct||0}%`;
+      statusEl.textContent=`${j.stage||"处理中"} · ${j.pct||0}%`+(j.message?` · ${j.message}`:"");
+      jobTimer=setTimeout(()=>poll(jid,compare,refCity),1200);
+      return;
+    }
+    progressWrap.style.display="none";
+    genBtn.disabled=false;
+    if(j.status==="error"){
+      statusEl.innerHTML=`<span class="err">生成失败：${j.error||"未知错误"}</span>`;
+      return;
+    }
+    const r=j.result;
+    if(!r||!r.geojson){statusEl.textContent="任务完成但没有返回分区。";return;}
+    if(!ensureLayers()){await new Promise(res=>map.once("load",res));ensureLayers();}
+    map.getSource("zones").setData(r.geojson);
+    fitGeojson(r.geojson);
+    const s=r.stats;
+    statusEl.textContent=`完成 · ${s.zones} 区 · ${s.area_km2} km² · 用时 ${s.elapsed_s} s`;
+    let html="";
+    html+=statRow("地区",s.region);
+    html+=statRow("数据",s.pbf);
+    html+=statRow("分区数",s.zones);
+    html+=statRow("覆盖面积",`${s.area_km2} km²`);
+    html+=statRow("合并阈值",s.threshold);
+    html+=statRow("目标面积 p50",`${s.target_p50_km2} km²`);
+    html+=statRow("碎块吸收阈值",`${s.absorb_km2} km²`);
+    html+=statRow("吸收 / 包络合并",`${s.absorbed} / ${s.enclave_merged}`);
+    html+=statRow("洞 / 多部件",`${s.holes} / ${s.multipart}`);
+    html+=statRow("底图缓存",s.substrate_cached?"复用":"本次构建");
+    if(s.reference&&!s.reference.error){
+      const rf=s.reference;
+      html+=`<div style="margin-top:8px;border-top:1px dashed #e5e7eb;padding-top:8px"><b>标准方案对比</b></div>`;
+      html+=statRow("标准方案分区",rf.ref_zones);
+      html+=statRow("IoU（贪心 1-1）",rf.iou);
+      html+=statRow("匹配率",rf.matched_frac);
+      html+=statRow("全参考 IoU",rf.iou_allref);
+      html+=statRow("边界 F1@25 m",rf.boundary_f1_25m);
+      html+=statRow("参考面积 p50",`${rf.area_p50_ref} km²`);
+    }else if(s.reference&&s.reference.error){
+      html+=`<div class="hint warn">标准方案对比失败：${s.reference.error}</div>`;
+    }
+    statsEl.innerHTML=html;
+    if(compare&&refCity&&refLoadedFor!==refCity) loadReference(refCity);
+  }catch(e){
+    progressWrap.style.display="none";
+    genBtn.disabled=false;
+    statusEl.innerHTML=`<span class="err">查询任务失败：${e.message}</span>`;
+  }
+}
+
+genBtn.onclick=startJob;
+window.addEventListener("beforeunload",()=>{if(jobTimer)clearTimeout(jobTimer);});
+
+fetch("/api/model").then(r=>r.json()).then(m=>{
+  document.getElementById("model").innerHTML=
+    `模型：${m.name}<br/>特征：${m.features} · 广东 ${m.scope}<br/>`+
+    `城市留出 AUC ${m.city_holdout_auc} · 2 km 瓦片 ${m.tile_cv_auc}`;
+}).catch(()=>{});
+
+loadCatalog().catch(e=>{
+  statusEl.innerHTML=`<span class="err">加载目录失败：${e.message}</span>`;
+  genBtn.disabled=true;
+});
+</script>
+</body>
+</html>
