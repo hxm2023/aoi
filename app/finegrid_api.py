@@ -2,10 +2,14 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 import uuid
 from pathlib import Path
 
+import geopandas as gpd
+import numpy as np
+import pyogrio
 import shapely
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
@@ -14,6 +18,7 @@ from shapely.geometry import box as shp_box
 from . import providers
 from .jobs import JobManager
 from pipeline import runner
+from pipeline.reference import load_reference
 
 ROOT = Path(__file__).resolve().parents[1]
 GENERATED = ROOT / "cache" / "generated"
@@ -182,19 +187,115 @@ def cache_clear():
     return {"removed": n}
 
 
+_LAYER_CACHE = {}
+_REF_CACHE = {"mtime": None, "gdf": None}
+
+
+def _pbf_for_bbox(bb):
+    req = shp_box(*bb)
+    rows = providers.province_catalog()
+    best = None
+    for r in rows:
+        rb = shp_box(*r["bbox"])
+        try:
+            ov = req.intersection(rb).area
+        except Exception:  # noqa: BLE001
+            ov = 0.0
+        if ov <= 0 or not r.get("pbf"):
+            continue
+        p = Path(r["pbf"])
+        if not p.exists():
+            continue
+        key = (ov, 1 if r.get("priority") else 0)
+        if best is None or key > best[0]:
+            best = (key, p)
+    return best[1] if best else None
+
+
+def _line_layer(bb, kind):
+    key = (tuple(round(x, 5) for x in bb), kind)
+    if key in _LAYER_CACHE:
+        return _LAYER_CACHE[key]
+    pbf = _pbf_for_bbox(bb)
+    if pbf is None:
+        raise HTTPException(404, "该地区暂无本地 OSM 数据")
+    cfg = providers._osm_conf()
+    os.environ["OSM_CONFIG_FILE"] = str(cfg)
+    pyogrio.set_gdal_config_options({"OSM_CONFIG_FILE": str(cfg)})
+    g = pyogrio.read_dataframe(
+        pbf, layer="lines", bbox=tuple(bb),
+        columns=["highway", "waterway", "railway", "name", "ref"],
+        on_invalid="ignore")
+    g = g[g.geometry.notna() & ~g.geometry.is_empty].copy()
+    hw = g["highway"].astype("string")
+    ww = g["waterway"].astype("string")
+    rw = g["railway"].astype("string")
+    major = {"motorway", "trunk", "primary", "secondary"}
+    if kind == "major":
+        g = g[hw.isin(major).fillna(False)]
+        klass = np.full(len(g), "major", dtype=object)
+    elif kind == "roads":
+        g = g[hw.notna()]
+        klass = np.where(hw[hw.notna()].isin(major), "major", "minor")
+    elif kind == "water":
+        g = g[ww.notna()]
+        klass = np.full(len(g), "water", dtype=object)
+    elif kind == "rail":
+        g = g[rw.notna()]
+        klass = np.full(len(g), "rail", dtype=object)
+    else:
+        g = g[hw.notna() | ww.notna() | rw.notna()]
+        klass = np.full(len(g), "minor", dtype=object)
+        klass[hw[hw.notna() | ww.notna() | rw.notna()].isin(major).fillna(False).to_numpy()] = "major"
+        base = hw[hw.notna() | ww.notna() | rw.notna()]
+        klass[ww[hw.notna() | ww.notna() | rw.notna()].notna().to_numpy()] = "water"
+        klass[rw[hw.notna() | ww.notna() | rw.notna()].notna().to_numpy()] = "rail"
+    if not len(g):
+        out = {"type": "FeatureCollection", "features": []}
+        _LAYER_CACHE[key] = out
+        return out
+    g = g.to_crs(4326)
+    g["klass"] = klass
+    g["geometry"] = g.geometry.simplify(0.00002, preserve_topology=True)
+    if len(g) > 60000:
+        g = g.iloc[:: max(1, len(g) // 60000)]
+    out = json.loads(g.to_json())
+    if len(_LAYER_CACHE) > 12:
+        _LAYER_CACHE.clear()
+    _LAYER_CACHE[key] = out
+    return out
+
+
+def _reference_layers():
+    p = ROOT / "data" / "reference" / "广东移动新版微网格20250420.csv"
+    if not p.exists():
+        raise HTTPException(404, "未找到标准微网格 CSV（请放到 data/reference/）")
+    mt = p.stat().st_mtime
+    if _REF_CACHE["gdf"] is None or _REF_CACHE["mtime"] != mt:
+        _REF_CACHE["gdf"] = load_reference(str(p)).to_crs(4326)
+        _REF_CACHE["mtime"] = mt
+    return _REF_CACHE["gdf"]
+
+
 @router.get("/reference")
-def reference():
-    return {"type": "FeatureCollection", "features": []}
+def reference(bbox: str | None = None):
+    g = _reference_layers()
+    if bbox:
+        b = _bbox(bbox)
+        g = g[g.intersects(shp_box(*b))]
+    return JSONResponse(json.loads(g.to_json()))
 
 
 @router.get("/basemap")
-def basemap():
-    return {"type": "FeatureCollection", "features": []}
+def basemap(bbox: str, key: str | None = None):
+    return JSONResponse(_line_layer(_bbox(bbox), "basemap"))
 
 
 @router.get("/layers")
-def layers():
-    return {"type": "FeatureCollection", "features": []}
+def layers(bbox: str, kind: str, key: str | None = None):
+    if kind == "reference":
+        return reference(bbox)
+    return JSONResponse(_line_layer(_bbox(bbox), kind))
 
 
 @router.get("/{key}")

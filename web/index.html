@@ -44,20 +44,20 @@
     <input id="bbox" placeholder="例如 113.25,23.10,113.29,23.13"/>
     <button id="genbbox" class="ghost">按 bbox 生成</button>
     <button id="fit" class="ghost">缩放到分区结果</button>
-    <label style="display:none">
-      <input id="basemap" type="checkbox" style="width:auto"/>
+    <label style="display:flex;align-items:center;gap:6px;margin-top:8px">
+      <input id="basemap" type="checkbox" style="width:auto" checked/>
       本地 OSM 路网底图（离线）
     </label>
-    <label style="margin-top:4px;display:none">在线底图（可选，需联网）</label>
-    <select id="online-basemap" style="display:none;width:100%;margin-top:2px;padding:4px">
+    <label style="margin-top:4px;display:block">在线底图（可选，需联网）</label>
+    <select id="online-basemap" style="width:100%;margin-top:2px;padding:4px">
       <option value="" selected>无（仅本地离线底图）</option>
       <option value="esri_light">Esri 浅灰</option>
       <option value="esri_imagery">Esri 影像</option>
       <option value="esri_street">Esri 街道</option>
       <option value="osm">OSM 瓦片</option>
     </select>
-    <label style="margin-top:4px;display:none">数据图层（可选）</label>
-    <select id="datalayer" style="display:none;width:100%;margin-top:2px;padding:4px">
+    <label style="margin-top:4px;display:block">数据图层（可选）</label>
+    <select id="datalayer" style="width:100%;margin-top:2px;padding:4px">
       <option value="">无附加数据层</option>
       <option value="major">OSM 主干道</option>
       <option value="roads">OSM 全部道路</option>
@@ -65,16 +65,17 @@
       <option value="rail">OSM 铁路</option>
       <option value="reference">广东移动标准分区方案</option>
     </select>
-    <label style="display:none">
+    <label style="display:flex;align-items:center;gap:6px;margin-top:4px">
       <input id="reference" type="checkbox" style="width:auto"/>
-      标准微网格边界
+      标准微网格边界（可选）
     </label>
     <div id="status">等待生成。</div>
     <div id="progressWrap"><div id="progressBar"></div></div>
     <div id="legend">
       分区仅显示边界线；黄色边框 = 当前选中分区。<br/>
       点击分区查看名称、面积与基础属性。<br/>
-      推理流程：OSM 预处理 → XGB 合并概率 → 引导合并 → 后处理/平滑/补缝。
+      推理流程：OSM 预处理 → XGB 合并概率 → 引导合并 → 后处理/平滑/补缝。<br/>
+      在线底图、数据图层、标准微网格边界均为可选，可随时开关。
     </div>
   </aside>
   <div id="map"></div>
