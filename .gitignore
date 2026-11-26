@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+cache/
+app/cache/
+data/china/*.pbf
+data/reference/*.csv
+*.osm.pbf
+.DS_Store
+server*.log
