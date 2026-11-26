@@ -73,12 +73,13 @@ PBF 不随包上传；请从合法 OSM 数据源获取后放入该目录。
 app/                    FastAPI 路由、省/市/县目录、任务队列、FineGrid 服务
 pipeline/               OSM 预处理、面网、90 特征、XGB 推理、引导合并、后处理/平滑/补缝
 models/
-  province_1_5_0_pbf_hc2/  广东 21 市部署模型（UBJ）与特征表
+  province_1_5_0_pbf_hc2/  广东 21 市部署模型（UBJ）、特征表与模型卡
   area_calibration.pkl     OSM-only 面积校准
 data/frames/            广东 21 市陆地边界
 data/china/             放省份 PBF（不随包提供）
 data/reference/         可选标准方案对照；不随包提供
 cache/                  生成缓存（底图/特征/市级聚合结果，可删除重建）
+training/               离线训练/数据构建/评估代码；PBF/CSV 由使用者放入
 web/                    单页前端（本地 MapLibre，仅边界线）
 docs/                   方法说明与结果图
 run.py                  启动入口
@@ -113,6 +114,22 @@ requirements.txt
   匹配率 0.8494，全参考 IoU 0.5671，0 洞 / 0 多部件。
   该指标是深圳基准；其他地区随 OSM 覆盖和标准方案差异会变化。
 - 结果图：`docs/images/finegrid_stages.png`、`docs/images/final_local_contact_*.png`。
+- 模型卡与 SHA256：`training/MODEL_CARD.md`、`training/MANIFEST.md`。
+
+## 训练与评估复现
+
+推理不需要 `training/`；要重新构建训练数据、训练模型或计算逐市指标时使用：
+
+- 代码：`training/tools/`（线网构建、语义合并、upper3 标签、面块对特征、
+  PBF 上下文特征、城市/省级分区、参考方案评估、逐市指标、阈值扫描）；
+- 一键脚本：`training/scripts/run_province_1_5_0.sh`；
+- 说明：`training/README.md`（数据放置、命令、产物、复现口径）；
+- 数据：PBF 放 `training/data/china/`，标准方案 CSV 放
+  `training/aoi_zoning_delivery/data/reference/`；均不随仓库分发。
+
+注意：发布模型训练时深圳复用了旧版底图，38 个 `cls2` 特征只在深圳非零；
+从零重建会得到更公平但指标不同的模型，详见 `training/README.md` 和
+`training/MODEL_CARD.md`。要严格复刻发布模型，需要那两份旧缓存。
 
 ## 数据与许可
 

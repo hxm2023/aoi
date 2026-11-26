@@ -1,0 +1,28 @@
+{
+  "model": "province_1_5_0_pbf_hc2",
+  "version": "province-1.5.0-deploy",
+  "features": 90,
+  "rows": 568257,
+  "cities": 21,
+  "train_auc": 0.9843,
+  "params": {
+    "n_estimators": 12000,
+    "max_depth": 7,
+    "learning_rate": 0.03,
+    "subsample": 0.9,
+    "colsample_bytree": 0.9,
+    "min_child_weight": 2,
+    "reg_lambda": 1.0,
+    "tree_method": "hist",
+    "max_bin": 64,
+    "n_jobs": 4,
+    "random_state": 0
+  },
+  "train_script": "training/tools/train_province_deep.py",
+  "note": "deployment model trained on all 21 Guangdong cities; city-disjoint AUC is in province_1_5_0_pbf",
+  "feature_note": "8 building features are constant zero; in the shipped training pairs the 38 cls2-derived features are nonzero only for Shenzhen because the legacy Shenzhen substrate had cls2 populated while fresh city builds did not. See training/MODEL_CARD.md.",
+  "sha256": {
+    "merge_model.ubj": "9c06164a4df90451d29452255b8566b5a1bbc033e21341fe5f7a9d617df3aa5e",
+    "features.json": "56464c0c415629add5e5977afe90d59c03aee65b394e7eeae9e00c47495bf620"
+  }
+}

@@ -47,6 +47,8 @@
   AUC 约 0.812，2 km 瓦片 CV AUC 约 0.819。
 - 面积校准 `area_calibration.pkl`：随机森林由 OSM-only 特征预测目标面积 p50，
   用于离线分析；在线 FineGrid 流程使用固定 0.3 km² 吸收阈值。
+- 训练/数据构建/评估代码与逐市指标脚本见 `training/README.md`；PBF 和标准
+  方案 CSV 由使用者放入 `training/` 对应目录。
 
 ## 4. 深圳参考结果
 
