@@ -58,6 +58,22 @@ GUANGDONG_CITIES = [
     "揭阳", "湛江", "茂名", "阳江", "云浮",
 ]
 DEFAULT_THRESHOLD = {"深圳": 0.70}
+CITY_PROFILES = {
+    # Validated acceptance profile.  The shipped model was trained with the
+    # Shenzhen cls2 boundary features populated; fresh builds before r7 zeroed
+    # them, which produced a different partition.  Keep the profile explicit
+    # and auditable until a uniformly retrained model replaces it.
+    "深圳": {
+        "name": "shenzhen_v1",
+        "cls2_mode": "auto",
+        "guided_target": 0.6,
+        "guided_min_p": 0.5,
+        "guided_cap": 40.0,
+        "absorb_km2": 0.30,
+        "smooth_all_m": 20.0,
+        "smooth_target_m": 60.0,
+    },
+}
 MAX_BBOX_KM2 = 25000.0
 RESULT_CACHE_VERSION = "fgxgb-1.5.0-r6"
 CLS2_MODES = ("populate", "train", "after")
@@ -278,6 +294,10 @@ def _load_final_cache(d, threshold, progress):
         return None
 
 
+def _profile(region):
+    return CITY_PROFILES.get(str(region.get("city") or ""))
+
+
 def _ensure_substrate(region, pbf, frame_path, d, progress, mode):
     meta_p = d / "meta.json"
     meta = {}
@@ -286,7 +306,12 @@ def _ensure_substrate(region, pbf, frame_path, d, progress, mode):
             meta = json.loads(meta_p.read_text(encoding="utf-8"))
         except Exception:  # noqa: BLE001
             meta = {}
-    rebuild = meta.get("feature_mode") not in (None, mode)
+    prof = _profile(region)
+    pname = prof.get("name") if prof else None
+    pair_mode = (prof.get("cls2_mode") if prof is not None
+                 else ("zero" if mode == "train" else "auto"))
+    rebuild = (meta.get("feature_mode") not in (None, mode)
+               or (pname is not None and meta.get("profile") != pname))
     lines_path = d / "lines.geojson"
     faces_path = d / "faces.geojson"
     pairs_path = d / "pairs.pkl"
@@ -302,7 +327,10 @@ def _ensure_substrate(region, pbf, frame_path, d, progress, mode):
         raw = d / "lines_raw.geojson"
         lines.build_lines(bounds, raw, pbf)
         progress("语义合并 · 去重与断点修复", 28, "同名/同 ref、面积边、行政界")
-        if mode in ("populate",):
+        use_cls2 = (mode == "populate"
+                    or (prof is not None
+                        and prof.get("cls2_mode") == "auto"))
+        if use_cls2:
             conflate(raw, lines_path, populate_cls2=True)
         else:
             conflate(raw, lines_path, populate_cls2=False)
@@ -318,11 +346,13 @@ def _ensure_substrate(region, pbf, frame_path, d, progress, mode):
     if not pairs_path.exists() or rebuild:
         pairmod.build_pairs(faces_path, lines_path, pairs_path,
                             region.get("city", "custom"),
-                            cls2_mode=("zero" if mode == "train" else "auto"))
+                            cls2_mode=pair_mode)
     progress("OSM 上下文特征", 72, "用地/自然/POI 密度")
     if not pairs_pbf.exists() or rebuild:
         pbf_features.add_pbf_features(pairs_path, faces_path, pbf, pairs_pbf)
-    meta.update({"feature_mode": mode, "region": region,
+    meta.update({"feature_mode": mode, "profile": pname,
+                 "cls2_mode": pair_mode if pname else None,
+                 "region": region,
                  "pbf": pbf.name, "built_s": round(time.time() - t0, 1)})
     meta_p.write_text(json.dumps(meta, ensure_ascii=False, indent=2),
                       encoding="utf-8")
@@ -359,6 +389,14 @@ def run_region(pbf_name, region, threshold, want_ref=False, progress=None,
         return seeded
     lines_path, faces_path, _pairs_path, pairs_pbf, cached = _ensure_substrate(
         region, pbf, cache_frame, d, progress, mode)
+    prof = _profile(region) or {}
+    pname = prof.get("name")
+    guided_target = float(prof.get("guided_target", 0.6))
+    guided_min_p = float(prof.get("guided_min_p", 0.5))
+    guided_cap = float(prof.get("guided_cap", 40.0))
+    absorb_km2 = float(prof.get("absorb_km2", 0.30))
+    smooth_all = float(prof.get("smooth_all_m", 20.0))
+    smooth_target = float(prof.get("smooth_target_m", 60.0))
     progress("加载模型 · 推理", 84, f"面块对阈值 {threshold:.2f}")
     model, feats = _model()
     d_pairs = pd.read_pickle(pairs_pbf)
@@ -368,20 +406,23 @@ def run_region(pbf_name, region, threshold, want_ref=False, progress=None,
     X = d_pairs[feats].astype(float).replace([np.inf, -np.inf], 0).fillna(0)
     prob = model.predict_proba(X)[:, 1]
     geoms = _load_faces(faces_path)
-    progress("XGB 引导小区块合并", 86, "target 0.6 km²")
+    progress("XGB 引导小区块合并", 86,
+             f"target {guided_target:g} km²"
+             + (f" · {pname}" if pname else ""))
     z = finalize.guided_draft(geoms, d_pairs, prob, float(threshold),
-                              target=0.6, min_p=0.5, cap=40.0,
-                              progress=progress)
+                              target=guided_target, min_p=guided_min_p,
+                              cap=guided_cap, progress=progress)
     raw_zones = len(z)
     progress("面积校准 · 碎块吸收", 90, "OSM-only 校准")
     cal = calibration.load_model(CALIB)
     p50 = calibration.predict_p50(cal, faces_path, pairs_pbf)
-    absorb_km2 = 0.30
     frame = read_frame(cache_frame)
     progress("拓扑收口", 93, "补缝/消叠/清洞/简化")
     z, nabs, nmerge = finalize.postprocess(z, frame, absorb_km2)
-    progress("形态平滑 · 最终补缝", 94, "FineGrid-XGB 收口")
-    z = finalize.smooth_final(z, frame, progress=progress)
+    progress("形态平滑 · 最终补缝", 94,
+             "FineGrid-XGB 收口" + (f" · {pname}" if pname else ""))
+    z = finalize.smooth_final(z, frame, r_all=smooth_all,
+                              r_target=smooth_target, progress=progress)
     geoms2 = [shapely.make_valid(g) for g in z.geometry]
     holes = int(sum(len(q.interiors) for g in geoms2
                     for q in shapely.get_parts(g)
@@ -425,9 +466,12 @@ def run_region(pbf_name, region, threshold, want_ref=False, progress=None,
         "raw_zones": int(raw_zones),
         "area_km2": round(float(cov.area) / 1e6, 1),
         "threshold": round(float(threshold), 3),
-        "guided_target_km2": 0.6,
+        "guided_target_km2": guided_target,
         "target_p50_km2": round(float(p50), 2),
         "absorb_km2": round(float(absorb_km2), 2),
+        "smooth_all_m": smooth_all,
+        "smooth_target_m": smooth_target,
+        "profile": pname,
         "absorbed": int(nabs),
         "enclave_merged": int(nmerge),
         "holes": holes,

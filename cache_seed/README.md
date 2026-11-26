@@ -49,7 +49,9 @@ Copy-Item cache_seed\shenzhen\* cache\guangdong-260918.osm\深圳\
 - `final_cache_t0.80.json`：结果缓存标记，版本 `fgxgb-1.5.0-r6`。
 
 这里只放**最终结果**，不含 PBF、标准方案 CSV、训练 pairs 或参考格标签。
-如果删除该目录，或代码版本与标记不匹配，应用会回到正常推理流程。
+如果删除该目录，或代码版本与标记不匹配，应用会回到正常推理流程；深圳会按
+`CITY_PROFILES["深圳"]` 的验收 profile 从 PBF 重建（启用 `cls2` 语义特征和
+固定的收口参数），不再使用训练底图缓存。
 
 注意：最终结果缓存命中时不会重新读 PBF 做推理，但前端选择城市仍要求
 `data/china/` 中存在对应 PBF。
