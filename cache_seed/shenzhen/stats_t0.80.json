@@ -1,0 +1,20 @@
+{
+  "region": "深圳",
+  "kind": "city",
+  "pbf": "guangdong-260918.osm.pbf",
+  "zones": 1459,
+  "raw_zones": 2053,
+  "area_km2": 2427.4,
+  "threshold": 0.8,
+  "guided_target_km2": 0.6,
+  "target_p50_km2": 0.99,
+  "absorb_km2": 0.3,
+  "absorbed": 579,
+  "enclave_merged": 4,
+  "holes": 0,
+  "multipart": 0,
+  "substrate_cached": true,
+  "feature_mode": "train",
+  "elapsed_s": 361.4,
+  "reference": null
+}

@@ -59,6 +59,7 @@ GUANGDONG_CITIES = [
 ]
 DEFAULT_THRESHOLD = {"深圳": 0.70}
 MAX_BBOX_KM2 = 25000.0
+RESULT_CACHE_VERSION = "fgxgb-1.5.0-r6"
 CLS2_MODES = ("populate", "train", "after")
 _MODE = os.environ.get("AOI_CLS2_MODE", "train")
 _MODEL = None
@@ -244,6 +245,39 @@ def _prepare_cache(region, pbf, frame_path):
     return d, fp
 
 
+def _load_final_cache(d, threshold, progress):
+    """Return a verified final result from a seeded cache, if present."""
+    marker_p = d / f"final_cache_t{threshold:.2f}.json"
+    zones_p = d / f"zones_t{threshold:.2f}.geojson"
+    stats_p = d / f"stats_t{threshold:.2f}.json"
+    if not (marker_p.exists() and zones_p.exists()):
+        return None
+    try:
+        marker = json.loads(marker_p.read_text(encoding="utf-8"))
+        if str(marker.get("version")) != RESULT_CACHE_VERSION:
+            return None
+        gj = json.loads(zones_p.read_text(encoding="utf-8"))
+        if not gj.get("features"):
+            return None
+        stats = (json.loads(stats_p.read_text(encoding="utf-8"))
+                 if stats_p.exists() else {})
+        old_elapsed = stats.get("elapsed_s")
+        stats.update({
+            "zones": int(marker.get("zones") or len(gj["features"])),
+            "result_cached": True,
+            "substrate_cached": True,
+            "source_elapsed_s": old_elapsed,
+            "elapsed_s": 0.0,
+            "cache_version": RESULT_CACHE_VERSION,
+        })
+        progress("加载结果缓存", 100, f"{stats['zones']} 区 · {d.name}")
+        print("final result cache", d.name, stats["zones"], flush=True)
+        return gj, stats
+    except Exception as exc:  # noqa: BLE001
+        print("final result cache skipped", exc, flush=True)
+        return None
+
+
 def _ensure_substrate(region, pbf, frame_path, d, progress, mode):
     meta_p = d / "meta.json"
     meta = {}
@@ -320,6 +354,9 @@ def run_region(pbf_name, region, threshold, want_ref=False, progress=None,
     cap = MAX_BBOX_KM2 if max_km2 is None else float(max_km2)
     pbf, region, frame_path = _validate(region, pbf_name, cap)
     d, cache_frame = _prepare_cache(region, pbf, frame_path)
+    seeded = _load_final_cache(d, float(threshold), progress)
+    if seeded is not None:
+        return seeded
     lines_path, faces_path, _pairs_path, pairs_pbf, cached = _ensure_substrate(
         region, pbf, cache_frame, d, progress, mode)
     progress("加载模型 · 推理", 84, f"面块对阈值 {threshold:.2f}")
