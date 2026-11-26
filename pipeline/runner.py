@@ -15,7 +15,7 @@ import shapely
 import xgboost as xgb
 from shapely.geometry import mapping
 
-from . import calibration, faces, finalize, lines, pairs as pairmod, pbf_features
+from . import calibration, faces, finalize, lines, naming, pairs as pairmod, pbf_features
 from .conflate import conflate, classify_cls2
 from .geo import A, ROOT, read_frame
 from .reference import load_reference, metrics
@@ -164,6 +164,9 @@ def reference_zones(city):
 def _region_key(region):
     if region["kind"] == "city":
         return str(region["city"])
+    if region["kind"] == "frame":
+        label = str(region.get("label") or "province")
+        return "frame_" + label.replace("/", "_").replace("\\", "_")
     b = [float(x) for x in region["bbox"]]
     return "bbox_%.4f_%.4f_%.4f_%.4f" % tuple(b)
 
@@ -173,7 +176,7 @@ def _bbox_area_km2(bbox):
     return float(gpd.GeoSeries([box], crs=4326).to_crs(A).iloc[0].area) / 1e6
 
 
-def _validate(region, pbf_name):
+def _validate(region, pbf_name, max_km2=MAX_BBOX_KM2):
     p = Path(pbf_name)
     if p.is_absolute():
         if not p.exists():
@@ -196,6 +199,22 @@ def _validate(region, pbf_name):
         if not frame.exists():
             raise ValueError("缺少该城市的行政边界")
         return pbf, {"kind": "city", "city": city}, frame
+    if region.get("kind") == "frame":
+        fp = Path(region.get("frame", ""))
+        if not fp.exists():
+            raise ValueError("缺少区域边界文件")
+        g = gpd.read_file(fp)
+        g = g[g.geometry.notna() & ~g.geometry.is_empty]
+        if not len(g):
+            raise ValueError("区域边界为空")
+        b = [float(x) for x in g.total_bounds]
+        u = shapely.union_all([shapely.make_valid(x) for x in g.geometry])
+        km2 = float(gpd.GeoSeries([u], crs=4326).to_crs(A).iloc[0].area) / 1e6
+        if km2 > max_km2:
+            raise ValueError(
+                f"区域范围过大（约 {km2:.0f} km²），请选择市/县或缩小范围")
+        return pbf, {"kind": "frame", "frame": str(fp),
+                     "label": str(region.get("label") or "省级")}, fp
     if region.get("kind") == "bbox":
         b = [float(x) for x in region.get("bbox", [])]
         if len(b) != 4 or not (-180 <= b[0] < b[2] <= 180
@@ -214,7 +233,7 @@ def _prepare_cache(region, pbf, frame_path):
     d = CACHE_DIR / pbf.stem / key
     d.mkdir(parents=True, exist_ok=True)
     fp = d / "frame.geojson"
-    if region["kind"] == "city":
+    if region["kind"] in ("city", "frame"):
         if not fp.exists():
             shutil.copyfile(frame_path, fp)
     else:
@@ -289,7 +308,7 @@ def _load_faces(faces_path):
 
 
 def run_region(pbf_name, region, threshold, want_ref=False, progress=None,
-               mode=None):
+               mode=None, max_km2=None):
     """Full inference: PBF -> lines -> faces -> features -> model -> seal."""
     if progress is None:
         def progress(stage, pct, msg=None):
@@ -298,7 +317,8 @@ def run_region(pbf_name, region, threshold, want_ref=False, progress=None,
     if mode not in CLS2_MODES:
         mode = "populate"
     t0 = time.time()
-    pbf, region, frame_path = _validate(region, pbf_name)
+    cap = MAX_BBOX_KM2 if max_km2 is None else float(max_km2)
+    pbf, region, frame_path = _validate(region, pbf_name, cap)
     d, cache_frame = _prepare_cache(region, pbf, frame_path)
     lines_path, faces_path, _pairs_path, pairs_pbf, cached = _ensure_substrate(
         region, pbf, cache_frame, d, progress, mode)
@@ -331,9 +351,16 @@ def run_region(pbf_name, region, threshold, want_ref=False, progress=None,
                     if q.geom_type == "Polygon"))
     multipart = int(sum(len(shapely.get_parts(g)) > 1 for g in geoms2))
     cov = shapely.union_all(geoms2) if geoms2 else shapely.Polygon()
-    label = region.get("city", "自定义范围")
+    label = (region.get("city") or region.get("label")
+             or "自定义范围")
+    try:
+        fr = gpd.read_file(cache_frame)
+        z = naming.assign_names(z, pbf, tuple(fr.total_bounds), fallback=label)
+    except Exception as exc:  # noqa: BLE001
+        print("osm naming skipped", exc, flush=True)
     z["zone"] = range(1, len(z) + 1)
-    z["name"] = [f"{label}{i}" for i in range(1, len(z) + 1)]
+    if "name" not in z.columns:
+        z["name"] = [f"{label}{i}" for i in range(1, len(z) + 1)]
     z["area_km2"] = (z.area / 1e6).round(4)
     zz = z.to_crs(4326)
     ref_metrics = None
@@ -370,6 +397,7 @@ def run_region(pbf_name, region, threshold, want_ref=False, progress=None,
         "multipart": multipart,
         "substrate_cached": bool(cached),
         "feature_mode": mode,
+        "naming": "osm",
         "elapsed_s": round(time.time() - t0, 1),
         "reference": ref_metrics,
     }

@@ -100,6 +100,9 @@ def _resolve(req):
 
 
 def _start(req):
+    if str(req.get("scope") or "view") == "province":
+        from .province_service import start_province
+        return start_province(req)
     pbf, region, label = _resolve(req)
     threshold = float(req.get("threshold", 0.8))
 
