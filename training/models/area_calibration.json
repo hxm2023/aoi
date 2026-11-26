@@ -1,0 +1,11 @@
+{
+  "cities": 21,
+  "loo_r2": 0.8239,
+  "loo_mae_log": 0.3483,
+  "features": [
+    "log_med_face",
+    "built",
+    "log_poi",
+    "log_border"
+  ]
+}

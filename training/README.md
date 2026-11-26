@@ -15,6 +15,9 @@
 - `pipeline/`：训练时的管线代码归档，便于对照；推理请使用仓库根目录的
   `pipeline/`；
 - `scripts/run_province_1_5_0.sh`：广东 21 市全流程脚本；
+- `models/province_1_5_0_pbf/`：城市整组留出的正则化验证模型、调参记录和
+  `oof_city.pkl`（供 `province_partition.py --probs oof_test|oof_val`）；
+- `models/area_calibration.*`：面积校准模型与逐市预测表；
 - `docs/METHOD_1_5_0.md`：基础 1.5.0 方法说明（训练期口径）；
 - `results/city_metrics_base_1_5_0.csv`：基础 1.5.0 管线的逐市指标参考；
 - `results/guangdong_base_1_5_0.summary.json`：同口径全省汇总；

@@ -1,0 +1,208 @@
+{
+  "pairs": 568257,
+  "features": 90,
+  "cities": 21,
+  "params": {
+    "max_depth": 5,
+    "min_child_weight": 8,
+    "reg_lambda": 3.0,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "learning_rate": 0.04
+  },
+  "tune": [
+    {
+      "params": {
+        "max_depth": 5,
+        "min_child_weight": 12,
+        "reg_lambda": 5.0,
+        "subsample": 0.75,
+        "colsample_bytree": 0.6,
+        "learning_rate": 0.04
+      },
+      "val_auc": 0.8053,
+      "val_ap": 0.9262
+    },
+    {
+      "params": {
+        "max_depth": 6,
+        "min_child_weight": 12,
+        "reg_lambda": 5.0,
+        "subsample": 0.75,
+        "colsample_bytree": 0.6,
+        "learning_rate": 0.04
+      },
+      "val_auc": 0.8055,
+      "val_ap": 0.9263
+    },
+    {
+      "params": {
+        "max_depth": 5,
+        "min_child_weight": 8,
+        "reg_lambda": 3.0,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "learning_rate": 0.04
+      },
+      "val_auc": 0.8058,
+      "val_ap": 0.9264
+    },
+    {
+      "params": {
+        "max_depth": 6,
+        "min_child_weight": 20,
+        "reg_lambda": 8.0,
+        "subsample": 0.7,
+        "colsample_bytree": 0.5,
+        "learning_rate": 0.04
+      },
+      "val_auc": 0.8053,
+      "val_ap": 0.9263
+    },
+    {
+      "params": {
+        "max_depth": 7,
+        "min_child_weight": 12,
+        "reg_lambda": 5.0,
+        "subsample": 0.75,
+        "colsample_bytree": 0.6,
+        "learning_rate": 0.03
+      },
+      "val_auc": 0.8057,
+      "val_ap": 0.9265
+    },
+    {
+      "params": {
+        "max_depth": 4,
+        "min_child_weight": 8,
+        "reg_lambda": 3.0,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "learning_rate": 0.05
+      },
+      "val_auc": 0.8053,
+      "val_ap": 0.9261
+    }
+  ],
+  "folds": [
+    {
+      "fold": 0,
+      "test_cities": [
+        "东莞",
+        "惠州",
+        "揭阳",
+        "深圳",
+        "清远"
+      ],
+      "val_cities": [
+        "云浮",
+        "梅州",
+        "河源",
+        "肇庆"
+      ],
+      "train_auc": 0.823,
+      "val_auc": 0.8058,
+      "test_auc": 0.8066,
+      "train_ap": 0.9405,
+      "val_ap": 0.9264,
+      "test_ap": 0.9208,
+      "best_iter": 156
+    },
+    {
+      "fold": 1,
+      "test_cities": [
+        "云浮",
+        "梅州",
+        "河源",
+        "肇庆"
+      ],
+      "val_cities": [
+        "佛山",
+        "汕尾",
+        "江门",
+        "潮州"
+      ],
+      "train_auc": 0.8427,
+      "val_auc": 0.8168,
+      "test_auc": 0.804,
+      "train_ap": 0.942,
+      "val_ap": 0.9421,
+      "test_ap": 0.926,
+      "best_iter": 891
+    },
+    {
+      "fold": 2,
+      "test_cities": [
+        "佛山",
+        "汕尾",
+        "江门",
+        "潮州"
+      ],
+      "val_cities": [
+        "中山",
+        "湛江",
+        "茂名",
+        "韶关"
+      ],
+      "train_auc": 0.8306,
+      "val_auc": 0.8273,
+      "test_auc": 0.8164,
+      "train_ap": 0.9381,
+      "val_ap": 0.931,
+      "test_ap": 0.942,
+      "best_iter": 654
+    },
+    {
+      "fold": 3,
+      "test_cities": [
+        "中山",
+        "湛江",
+        "茂名",
+        "韶关"
+      ],
+      "val_cities": [
+        "广州",
+        "汕头",
+        "珠海",
+        "阳江"
+      ],
+      "train_auc": 0.8369,
+      "val_auc": 0.8073,
+      "test_auc": 0.8268,
+      "train_ap": 0.9405,
+      "val_ap": 0.9396,
+      "test_ap": 0.9306,
+      "best_iter": 897
+    },
+    {
+      "fold": 4,
+      "test_cities": [
+        "广州",
+        "汕头",
+        "珠海",
+        "阳江"
+      ],
+      "val_cities": [
+        "东莞",
+        "惠州",
+        "揭阳",
+        "深圳",
+        "清远"
+      ],
+      "train_auc": 0.8345,
+      "val_auc": 0.8061,
+      "test_auc": 0.8063,
+      "train_ap": 0.9412,
+      "val_ap": 0.9207,
+      "test_ap": 0.9392,
+      "best_iter": 583
+    }
+  ],
+  "mean_train_auc": 0.8335,
+  "mean_val_auc": 0.8127,
+  "mean_test_auc": 0.812,
+  "city_oof_test_auc": 0.8102,
+  "city_oof_test_ap": 0.931,
+  "city_oof_val_auc": 0.8098,
+  "city_oof_val_ap": 0.9307
+}
