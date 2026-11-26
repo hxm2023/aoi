@@ -311,9 +311,10 @@ def run_region(pbf_name, region, threshold, want_ref=False, progress=None,
     X = d_pairs[feats].astype(float).replace([np.inf, -np.inf], 0).fillna(0)
     prob = model.predict_proba(X)[:, 1]
     geoms = _load_faces(faces_path)
-    progress("XGB 引导小区块合并", 88, "target 0.6 km²")
+    progress("XGB 引导小区块合并", 86, "target 0.6 km²")
     z = finalize.guided_draft(geoms, d_pairs, prob, float(threshold),
-                              target=0.6, min_p=0.5, cap=40.0)
+                              target=0.6, min_p=0.5, cap=40.0,
+                              progress=progress)
     raw_zones = len(z)
     progress("面积校准 · 碎块吸收", 90, "OSM-only 校准")
     cal = calibration.load_model(CALIB)
@@ -322,8 +323,8 @@ def run_region(pbf_name, region, threshold, want_ref=False, progress=None,
     frame = read_frame(cache_frame)
     progress("拓扑收口", 93, "补缝/消叠/清洞/简化")
     z, nabs, nmerge = finalize.postprocess(z, frame, absorb_km2)
-    progress("形态平滑 · 最终补缝", 96, "FineGrid-XGB 收口")
-    z = finalize.smooth_final(z, frame)
+    progress("形态平滑 · 最终补缝", 94, "FineGrid-XGB 收口")
+    z = finalize.smooth_final(z, frame, progress=progress)
     geoms2 = [shapely.make_valid(g) for g in z.geometry]
     holes = int(sum(len(q.interiors) for g in geoms2
                     for q in shapely.get_parts(g)

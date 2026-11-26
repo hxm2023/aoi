@@ -160,7 +160,7 @@ def postprocess(z, frame, absorb_km2=0.10):
 
 
 def guided_draft(geoms, pairs, prob, thr, target=0.6, min_p=0.5,
-                 cap=40.0, passes=30):
+                 cap=40.0, passes=30, progress=None):
     """Union at thr, then merge small components along strongest XGB edges."""
     n = len(geoms)
     ii = pairs["i"].to_numpy(int)
@@ -181,7 +181,10 @@ def guided_draft(geoms, pairs, prob, thr, target=0.6, min_p=0.5,
             a, b = find(parent, int(ii[k])), find(parent, int(jj[k]))
             if a != b:
                 parent[b] = a
-    for _ in range(passes):
+    for it in range(passes):
+        if progress is not None:
+            progress("XGB 引导合并", 86 + min(3, it * 3 / max(passes, 1)),
+                     f"第 {it + 1} 轮")
         ra = defaultdict(float)
         for i in range(n):
             ra[find(parent, i)] += fa[i]
@@ -249,8 +252,12 @@ def _keep_single(z):
     return z[z.geometry.notna() & ~z.geometry.is_empty].reset_index(drop=True)
 
 
-def smooth_final(z, frame, r_all=20.0, r_target=60.0):
+def smooth_final(z, frame, r_all=20.0, r_target=60.0, progress=None):
     """Morphological smoothing + single-part cleanup + gap fill."""
+    def rep(pct, msg):
+        if progress is not None:
+            progress("形态平滑 · 补缝", pct, msg)
+    rep(94, "全域 20 m 开闭运算")
     z = z[z.geometry.notna() & ~z.geometry.is_empty].reset_index(drop=True)
     geoms = []
     for g in z.geometry:
@@ -270,6 +277,7 @@ def smooth_final(z, frame, r_all=20.0, r_target=60.0):
         z = strip_holes(z)
         if all(len(shapely.get_parts(x)) == 1 for x in z.geometry):
             break
+    rep(95, "低紧致度城市区定向平滑")
     geoms = []
     for g in z.geometry:
         a = g.area / 1e6
@@ -292,6 +300,7 @@ def smooth_final(z, frame, r_all=20.0, r_target=60.0):
         if all(len(shapely.get_parts(x)) == 1 for x in z.geometry):
             break
     # residual gaps: merge into an adjacent zone when the union stays single
+    rep(96, "最终补缝")
     for _ in range(2):
         cov = shapely.union_all(list(z.geometry))
         gap = shapely.make_valid(frame.difference(cov))
@@ -326,6 +335,7 @@ def smooth_final(z, frame, r_all=20.0, r_target=60.0):
         z = gpd.GeoDataFrame(geometry=geoms, crs=A)
         z = resolve_overlaps(z)
         z = strip_holes(z)
+    rep(99, "拓扑收尾")
     z = _keep_single(z)
     z = resolve_overlaps(z)
     z = strip_holes(z)
