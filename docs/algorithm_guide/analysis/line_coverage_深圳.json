@@ -1,0 +1,148 @@
+{
+  "city": "深圳",
+  "tol_m": 25.0,
+  "raw_path": "training/commercial_zoning/cache/clean_lines_aux/深圳/lines_aug.geojson",
+  "clean_path": "training/commercial_zoning/cache/province_1_5_0_legacy/深圳/lines.geojson",
+  "raw": {
+    "admin": 29.5,
+    "landuse": 26419.7,
+    "local": 9529.5,
+    "major": 4571.8,
+    "natural": 41.5,
+    "other": 47656.4,
+    "rail": 4217.1,
+    "river": 1728.9,
+    "secondary": 2536.6,
+    "stream": 2665.6,
+    "tertiary": 4573.4,
+    "weak": 19712.8,
+    "_total_km": 123682.6,
+    "_features": 213197
+  },
+  "clean": {
+    "admin": 2168.7,
+    "landuse": 4884.1,
+    "local": 3754.7,
+    "major": 2301.4,
+    "natural": 2173.2,
+    "poi": 848.3,
+    "rail": 1225.4,
+    "river": 486.5,
+    "secondary": 1001.5,
+    "stream": 82.5,
+    "tertiary": 1909.1,
+    "water": 1281.0,
+    "weak": 7599.3,
+    "_total_km": 29715.5,
+    "_features": 123507
+  },
+  "reference": {
+    "cells": 1707,
+    "boundary_km": 4488.5,
+    "samples": 262948
+  },
+  "coverage": {
+    "10": {
+      "covered_frac": 0.528,
+      "covered_km": 2776.7
+    },
+    "25": {
+      "covered_frac": 0.7668,
+      "covered_km": 4032.48
+    },
+    "50": {
+      "covered_frac": 0.8736,
+      "covered_km": 4594.0
+    },
+    "100": {
+      "covered_frac": 0.944,
+      "covered_km": 4964.6
+    }
+  },
+  "nearest_class_share": {
+    "major": 0.1411,
+    "secondary": 0.0585,
+    "tertiary": 0.0812,
+    "local": 0.0642,
+    "weak": 0.0936,
+    "river": 0.0173,
+    "stream": 0.002,
+    "water": 0.0178,
+    "rail": 0.0352,
+    "admin": 0.0884,
+    "landuse": 0.0855,
+    "natural": 0.0634,
+    "poi": 0.0186
+  },
+  "uncovered_frac_25m": 0.2332,
+  "standalone_class_coverage": {
+    "major": 0.2078,
+    "secondary": 0.0946,
+    "tertiary": 0.1239,
+    "local": 0.1221,
+    "weak": 0.2028,
+    "river": 0.0287,
+    "stream": 0.0055,
+    "water": 0.0312,
+    "rail": 0.0775,
+    "admin": 0.1369,
+    "landuse": 0.1866,
+    "natural": 0.0935,
+    "poi": 0.0442
+  },
+  "osm_precision_on_reference": {
+    "major": 0.5484,
+    "secondary": 0.4196,
+    "tertiary": 0.3799,
+    "local": 0.1508,
+    "weak": 0.1533,
+    "river": 0.27,
+    "stream": 0.2266,
+    "water": 0.0784,
+    "rail": 0.2876,
+    "admin": 0.5154,
+    "landuse": 0.1725,
+    "natural": 0.1639,
+    "poi": 0.2265
+  },
+  "line_reduction_frac": 0.4207,
+  "length_reduction_frac": 0.7597,
+  "locals": [
+    {
+      "name": "福田",
+      "bbox": [
+        114.03,
+        22.52,
+        114.1,
+        22.56
+      ],
+      "image": "lines_深圳_福田.png",
+      "raw_features": 4360,
+      "clean_features": 5596,
+      "raw_km": 1763.61,
+      "clean_km": 852.57,
+      "length_reduction_frac": 0.5166,
+      "ref_covered_frac_25m": 0.9718,
+      "uncovered_km_est": 2.19
+    },
+    {
+      "name": "南山",
+      "bbox": [
+        113.92,
+        22.52,
+        113.97,
+        22.55
+      ],
+      "image": "lines_深圳_南山.png",
+      "raw_features": 2619,
+      "clean_features": 3560,
+      "raw_km": 999.88,
+      "clean_km": 570.49,
+      "length_reduction_frac": 0.4294,
+      "ref_covered_frac_25m": 0.9537,
+      "uncovered_km_est": 2.33
+    }
+  ],
+  "coverage_figure": "coverage_深圳.png",
+  "class_figure": "class_relation_深圳.png"
+}

@@ -1,0 +1,148 @@
+{
+  "city": "广州",
+  "tol_m": 25.0,
+  "raw_path": "training/commercial_zoning/cache/clean_lines_aux/广州/lines_aug.geojson",
+  "clean_path": "training/commercial_zoning/cache/province_1_5_0_legacy/广州/lines.geojson",
+  "raw": {
+    "admin": 22.3,
+    "landuse": 24685.0,
+    "local": 27505.0,
+    "major": 8161.3,
+    "natural": 42.4,
+    "other": 47929.8,
+    "rail": 7701.0,
+    "river": 7937.4,
+    "secondary": 5605.7,
+    "stream": 3849.5,
+    "tertiary": 10413.9,
+    "weak": 15834.0,
+    "_total_km": 159687.4,
+    "_features": 221108
+  },
+  "clean": {
+    "admin": 2882.8,
+    "landuse": 7573.1,
+    "local": 11732.8,
+    "major": 3331.8,
+    "natural": 3425.3,
+    "poi": 1541.6,
+    "rail": 2812.7,
+    "river": 2795.9,
+    "secondary": 1603.1,
+    "stream": 1789.7,
+    "tertiary": 3946.3,
+    "water": 4679.7,
+    "weak": 7753.3,
+    "_total_km": 55868.0,
+    "_features": 176346
+  },
+  "reference": {
+    "cells": 1942,
+    "boundary_km": 7454.4,
+    "samples": 429528
+  },
+  "coverage": {
+    "10": {
+      "covered_frac": 0.4104,
+      "covered_km": 3525.42
+    },
+    "25": {
+      "covered_frac": 0.6225,
+      "covered_km": 5347.28
+    },
+    "50": {
+      "covered_frac": 0.7409,
+      "covered_km": 6365.0
+    },
+    "100": {
+      "covered_frac": 0.8434,
+      "covered_km": 7245.7
+    }
+  },
+  "nearest_class_share": {
+    "major": 0.0991,
+    "secondary": 0.0469,
+    "tertiary": 0.0663,
+    "local": 0.0805,
+    "weak": 0.0477,
+    "river": 0.0514,
+    "stream": 0.0206,
+    "water": 0.0289,
+    "rail": 0.0326,
+    "admin": 0.0505,
+    "landuse": 0.0593,
+    "natural": 0.0207,
+    "poi": 0.018
+  },
+  "uncovered_frac_25m": 0.3775,
+  "standalone_class_coverage": {
+    "major": 0.146,
+    "secondary": 0.0718,
+    "tertiary": 0.0979,
+    "local": 0.1327,
+    "weak": 0.0941,
+    "river": 0.073,
+    "stream": 0.0318,
+    "water": 0.0478,
+    "rail": 0.062,
+    "admin": 0.0906,
+    "landuse": 0.1159,
+    "natural": 0.03,
+    "poi": 0.0385
+  },
+  "osm_precision_on_reference": {
+    "major": 0.4795,
+    "secondary": 0.3767,
+    "tertiary": 0.2365,
+    "local": 0.1206,
+    "weak": 0.0849,
+    "river": 0.1964,
+    "stream": 0.0982,
+    "water": 0.0869,
+    "rail": 0.1918,
+    "admin": 0.2332,
+    "landuse": 0.1149,
+    "natural": 0.0689,
+    "poi": 0.1811
+  },
+  "line_reduction_frac": 0.2024,
+  "length_reduction_frac": 0.6501,
+  "locals": [
+    {
+      "name": "海珠",
+      "bbox": [
+        113.25,
+        23.05,
+        113.4,
+        23.11
+      ],
+      "image": "lines_广州_海珠.png",
+      "raw_features": 7093,
+      "clean_features": 12173,
+      "raw_km": 2715.41,
+      "clean_km": 2246.5,
+      "length_reduction_frac": 0.1727,
+      "ref_covered_frac_25m": 0.9177,
+      "uncovered_km_est": 16.75
+    },
+    {
+      "name": "天河",
+      "bbox": [
+        113.32,
+        23.12,
+        113.4,
+        23.18
+      ],
+      "image": "lines_广州_天河.png",
+      "raw_features": 4477,
+      "clean_features": 7344,
+      "raw_km": 1435.84,
+      "clean_km": 1200.8,
+      "length_reduction_frac": 0.1637,
+      "ref_covered_frac_25m": 0.9317,
+      "uncovered_km_est": 8.89
+    }
+  ],
+  "coverage_figure": "coverage_广州.png",
+  "class_figure": "class_relation_广州.png"
+}

@@ -1,0 +1,345 @@
+{
+  "features": 90,
+  "used_features": 82,
+  "total_gain": 509.303,
+  "top_gain": [
+    {
+      "feature": "centroid_m",
+      "gain_pct": 8.80766447722336,
+      "weight": 34043
+    },
+    {
+      "feature": "b_deg",
+      "gain_pct": 4.669012823204198,
+      "weight": 17379
+    },
+    {
+      "feature": "bf_major",
+      "gain_pct": 3.348331578435979,
+      "weight": 8212
+    },
+    {
+      "feature": "bf_secondary",
+      "gain_pct": 2.6736196378370045,
+      "weight": 5425
+    },
+    {
+      "feature": "b_lu_built",
+      "gain_pct": 1.7698317048914172,
+      "weight": 9187
+    },
+    {
+      "feature": "bf_admin",
+      "gain_pct": 1.7613578533168623,
+      "weight": 5369
+    },
+    {
+      "feature": "a_deg",
+      "gain_pct": 1.582284775694128,
+      "weight": 26345
+    },
+    {
+      "feature": "a_lu_built",
+      "gain_pct": 1.5369971191446576,
+      "weight": 10475
+    },
+    {
+      "feature": "border_frac",
+      "gain_pct": 1.4162135569348089,
+      "weight": 30746
+    },
+    {
+      "feature": "sum_area",
+      "gain_pct": 1.2624426615962023,
+      "weight": 20823
+    },
+    {
+      "feature": "a_secondary",
+      "gain_pct": 1.255408207578849,
+      "weight": 13568
+    },
+    {
+      "feature": "bf_local",
+      "gain_pct": 1.2517854646961668,
+      "weight": 16323
+    },
+    {
+      "feature": "bf_weak",
+      "gain_pct": 1.2496762707213627,
+      "weight": 7824
+    },
+    {
+      "feature": "a_poi_cnt",
+      "gain_pct": 1.2301972164759827,
+      "weight": 13883
+    },
+    {
+      "feature": "bf_river",
+      "gain_pct": 1.2055937608712743,
+      "weight": 4625
+    },
+    {
+      "feature": "a_nbr_area_mean",
+      "gain_pct": 1.204192281618396,
+      "weight": 41967
+    },
+    {
+      "feature": "b_lu_nat",
+      "gain_pct": 1.174032343235959,
+      "weight": 6909
+    },
+    {
+      "feature": "a_lu_nat",
+      "gain_pct": 1.1650190218601426,
+      "weight": 8140
+    },
+    {
+      "feature": "nbr_jaccard",
+      "gain_pct": 1.1633979909439602,
+      "weight": 28250
+    },
+    {
+      "feature": "b_nbr_area_mean",
+      "gain_pct": 1.1478303268213337,
+      "weight": 36200
+    }
+  ],
+  "groups": [
+    {
+      "group": "两侧类别密度",
+      "features": 24,
+      "gain": 121.659,
+      "gain_pct": 23.89
+    },
+    {
+      "group": "面积/形状",
+      "features": 12,
+      "gain": 98.838,
+      "gain_pct": 19.41
+    },
+    {
+      "group": "边界类别(cls2)",
+      "features": 14,
+      "gain": 97.075,
+      "gain_pct": 19.06
+    },
+    {
+      "group": "用地上下文",
+      "features": 16,
+      "gain": 86.781,
+      "gain_pct": 17.04
+    },
+    {
+      "group": "邻接/拓扑",
+      "features": 8,
+      "gain": 63.582,
+      "gain_pct": 12.48
+    },
+    {
+      "group": "POI 上下文",
+      "features": 8,
+      "gain": 41.368,
+      "gain_pct": 8.12
+    },
+    {
+      "group": "建筑(未启用)",
+      "features": 8,
+      "gain": 0.0,
+      "gain_pct": 0.0
+    }
+  ],
+  "sample_pairs": 4000,
+  "sample_cities": [
+    "深圳",
+    "广州",
+    "佛山",
+    "东莞",
+    "珠海"
+  ],
+  "high_prob_pairs": 2732,
+  "low_prob_pairs": 241,
+  "top_shap": [
+    {
+      "feature": "centroid_m",
+      "mean_abs_shap_pct": 16.918830361117497
+    },
+    {
+      "feature": "b_deg",
+      "mean_abs_shap_pct": 6.774398614151785
+    },
+    {
+      "feature": "a_deg",
+      "mean_abs_shap_pct": 4.368508331202065
+    },
+    {
+      "feature": "border_frac",
+      "mean_abs_shap_pct": 3.295914261579388
+    },
+    {
+      "feature": "nbr_jaccard",
+      "mean_abs_shap_pct": 2.8030904269152583
+    },
+    {
+      "feature": "bf_local",
+      "mean_abs_shap_pct": 2.5316810340394325
+    },
+    {
+      "feature": "b_nbr_area_mean",
+      "mean_abs_shap_pct": 2.4515523919106075
+    },
+    {
+      "feature": "bf_major",
+      "mean_abs_shap_pct": 2.363473076986466
+    },
+    {
+      "feature": "a_nbr_area_mean",
+      "mean_abs_shap_pct": 2.3427468847996304
+    },
+    {
+      "feature": "a_perim",
+      "mean_abs_shap_pct": 1.7183063637478493
+    },
+    {
+      "feature": "b_nbr_pp_mean",
+      "mean_abs_shap_pct": 1.6369164135988792
+    },
+    {
+      "feature": "b_lu_built",
+      "mean_abs_shap_pct": 1.6019257301884666
+    },
+    {
+      "feature": "a_local",
+      "mean_abs_shap_pct": 1.578126597086092
+    },
+    {
+      "feature": "a_lu_built",
+      "mean_abs_shap_pct": 1.5528557629664899
+    },
+    {
+      "feature": "u_pp",
+      "mean_abs_shap_pct": 1.5355328482587633
+    },
+    {
+      "feature": "a_nbr_pp_mean",
+      "mean_abs_shap_pct": 1.4890657687762976
+    },
+    {
+      "feature": "a_area",
+      "mean_abs_shap_pct": 1.4385352776479305
+    },
+    {
+      "feature": "a_landuse",
+      "mean_abs_shap_pct": 1.320735896681437
+    },
+    {
+      "feature": "a_weak",
+      "mean_abs_shap_pct": 1.2846679316722092
+    },
+    {
+      "feature": "border_m",
+      "mean_abs_shap_pct": 1.2778697571922644
+    }
+  ],
+  "direction": [
+    {
+      "feature": "centroid_m",
+      "median_hi_prob": 274.5836220679844,
+      "median_low_prob": 1159.8107125059805
+    },
+    {
+      "feature": "b_deg",
+      "median_hi_prob": 4.0,
+      "median_low_prob": 7.0
+    },
+    {
+      "feature": "a_deg",
+      "median_hi_prob": 5.0,
+      "median_low_prob": 12.0
+    },
+    {
+      "feature": "border_frac",
+      "median_hi_prob": 0.2688308683377408,
+      "median_low_prob": 0.09312201547557294
+    },
+    {
+      "feature": "nbr_jaccard",
+      "median_hi_prob": 0.14285714285714285,
+      "median_low_prob": 0.07142857142857142
+    },
+    {
+      "feature": "bf_local",
+      "median_hi_prob": 0.11834733893557423,
+      "median_low_prob": 0.0
+    },
+    {
+      "feature": "b_nbr_area_mean",
+      "median_hi_prob": 0.09569173166315878,
+      "median_low_prob": 0.2423037851208667
+    },
+    {
+      "feature": "bf_major",
+      "median_hi_prob": 0.0,
+      "median_low_prob": 0.0
+    },
+    {
+      "feature": "a_nbr_area_mean",
+      "median_hi_prob": 0.09273509576915417,
+      "median_low_prob": 0.17549049731957989
+    },
+    {
+      "feature": "a_perim",
+      "median_hi_prob": 1688.4294829518863,
+      "median_low_prob": 7329.874214234664
+    },
+    {
+      "feature": "b_nbr_pp_mean",
+      "median_hi_prob": 0.35555572608205244,
+      "median_low_prob": 0.3136498634521248
+    },
+    {
+      "feature": "b_lu_built",
+      "median_hi_prob": 1.0,
+      "median_low_prob": 0.8
+    },
+    {
+      "feature": "a_local",
+      "median_hi_prob": 0.002113614216214532,
+      "median_low_prob": 0.0008330491343755122
+    },
+    {
+      "feature": "a_lu_built",
+      "median_hi_prob": 0.9,
+      "median_low_prob": 0.8
+    },
+    {
+      "feature": "u_pp",
+      "median_hi_prob": 0.253106113829793,
+      "median_low_prob": 0.07982109605562608
+    },
+    {
+      "feature": "a_nbr_pp_mean",
+      "median_hi_prob": 0.38088675152165735,
+      "median_low_prob": 0.3516356998202348
+    },
+    {
+      "feature": "a_area",
+      "median_hi_prob": 0.061733593975176505,
+      "median_low_prob": 0.48932375626013797
+    },
+    {
+      "feature": "a_landuse",
+      "median_hi_prob": 0.0,
+      "median_low_prob": 0.0005913683133351771
+    },
+    {
+      "feature": "a_weak",
+      "median_hi_prob": 0.0001858049356935751,
+      "median_low_prob": 0.00045894505287147704
+    },
+    {
+      "feature": "border_m",
+      "median_hi_prob": 240.35119180989076,
+      "median_low_prob": 219.15696059822528
+    }
+  ]
+}

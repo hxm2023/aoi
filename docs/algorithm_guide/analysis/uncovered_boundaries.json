@@ -1,0 +1,44 @@
+[
+  {
+    "city": "广州",
+    "tol_m": 25,
+    "boundary_km": 7454.4,
+    "covered_frac": 0.6225,
+    "uncovered_km": 2814.0
+  },
+  {
+    "city": "广州",
+    "tol_m": 50,
+    "boundary_km": 7454.4,
+    "covered_frac": 0.7409,
+    "uncovered_km": 1931.4
+  },
+  {
+    "city": "广州",
+    "tol_m": 100,
+    "boundary_km": 7454.4,
+    "covered_frac": 0.8434,
+    "uncovered_km": 1167.4
+  },
+  {
+    "city": "深圳",
+    "tol_m": 25,
+    "boundary_km": 4488.5,
+    "covered_frac": 0.7668,
+    "uncovered_km": 1046.7
+  },
+  {
+    "city": "深圳",
+    "tol_m": 50,
+    "boundary_km": 4488.5,
+    "covered_frac": 0.8736,
+    "uncovered_km": 567.3
+  },
+  {
+    "city": "深圳",
+    "tol_m": 100,
+    "boundary_km": 4488.5,
+    "covered_frac": 0.944,
+    "uncovered_km": 251.4
+  }
+]

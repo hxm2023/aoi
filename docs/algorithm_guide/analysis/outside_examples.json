@@ -1,0 +1,53 @@
+[
+  {
+    "example": "上海黄浦静安",
+    "pbf": "shanghai-260903.osm.pbf",
+    "bbox": [
+      121.44,
+      31.21,
+      121.5,
+      31.25
+    ],
+    "zones": 30,
+    "area_km2": 25.4,
+    "holes": 0,
+    "multipart": 0,
+    "model": "province_1_5_0_pbf_hc4",
+    "finish_r_m": 30.0,
+    "elapsed_s": 45.3
+  },
+  {
+    "example": "北京朝阳",
+    "pbf": "beijing-261114.osm.pbf",
+    "bbox": [
+      116.42,
+      39.89,
+      116.48,
+      39.93
+    ],
+    "zones": 21,
+    "area_km2": 22.8,
+    "holes": 0,
+    "multipart": 0,
+    "model": "province_1_5_0_pbf_hc4",
+    "finish_r_m": 30.0,
+    "elapsed_s": 48.2
+  },
+  {
+    "example": "厦门思明",
+    "pbf": "fujian-261114.osm.pbf",
+    "bbox": [
+      118.07,
+      24.43,
+      118.14,
+      24.48
+    ],
+    "zones": 12,
+    "area_km2": 39.3,
+    "holes": 0,
+    "multipart": 0,
+    "model": "province_1_5_0_pbf_hc4",
+    "finish_r_m": 30.0,
+    "elapsed_s": 40.2
+  }
+]

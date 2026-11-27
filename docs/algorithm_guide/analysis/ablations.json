@@ -1,0 +1,90 @@
+[
+  {
+    "variant": "thr070",
+    "zones": 1109,
+    "iou": 0.6034,
+    "matched": 0.638,
+    "allref": 0.385,
+    "bF1": 0.476,
+    "area_p50": 1.004,
+    "holes": 0,
+    "multipart": 0
+  },
+  {
+    "variant": "thr075",
+    "zones": 1200,
+    "iou": 0.6095,
+    "matched": 0.686,
+    "allref": 0.4181,
+    "bF1": 0.4789,
+    "area_p50": 0.993,
+    "holes": 0,
+    "multipart": 0
+  },
+  {
+    "variant": "thr085",
+    "zones": 1329,
+    "iou": 0.6069,
+    "matched": 0.7364,
+    "allref": 0.4469,
+    "bF1": 0.472,
+    "area_p50": 0.993,
+    "holes": 0,
+    "multipart": 0
+  },
+  {
+    "variant": "pure_threshold",
+    "zones": 2713,
+    "iou": 0.5872,
+    "matched": 0.976,
+    "allref": 0.5731,
+    "bF1": 0.4846,
+    "area_p50": 0.387,
+    "holes": 0,
+    "multipart": 0
+  },
+  {
+    "variant": "guided_only",
+    "zones": 1694,
+    "iou": 0.5758,
+    "matched": 0.7873,
+    "allref": 0.4533,
+    "bF1": 0.4718,
+    "area_p50": 0.763,
+    "holes": 0,
+    "multipart": 0
+  },
+  {
+    "variant": "target040",
+    "zones": 1481,
+    "iou": 0.621,
+    "matched": 0.8155,
+    "allref": 0.5064,
+    "bF1": 0.4866,
+    "area_p50": 0.82,
+    "holes": 0,
+    "multipart": 0
+  },
+  {
+    "variant": "target080",
+    "zones": 1118,
+    "iou": 0.5795,
+    "matched": 0.6303,
+    "allref": 0.3653,
+    "bF1": 0.4647,
+    "area_p50": 1.16,
+    "holes": 0,
+    "multipart": 0
+  },
+  {
+    "variant": "current",
+    "zones": 1271,
+    "iou": 0.6057,
+    "matched": 0.7147,
+    "allref": 0.4329,
+    "bF1": 0.4742,
+    "area_p50": 0.991,
+    "holes": 0,
+    "multipart": 0
+  }
+]

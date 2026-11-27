@@ -1,0 +1,20 @@
+[
+  {
+    "name": "最大重叠标签",
+    "zones": 1703,
+    "multipart": 972,
+    "multipart_frac": 0.5708,
+    "iou": 0.7034,
+    "matched": 0.9977,
+    "allref": 0.7018
+  },
+  {
+    "name": "upper3 连续标签",
+    "zones": 1697,
+    "multipart": 244,
+    "multipart_frac": 0.1438,
+    "iou": 0.623,
+    "matched": 0.9936,
+    "allref": 0.619
+  }
+]
