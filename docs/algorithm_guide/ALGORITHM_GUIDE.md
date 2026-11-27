@@ -978,9 +978,10 @@ python training/tools/eval_uniform_city.py --city 深圳 \
 旧范式底图重建：
 
 ```bash
-python training/tools/build_legacy_substrate.py \
-  --clean-dir aoi_release/commercial_zoning/cache/clean_lines_aux \
-  --out training/commercial_zoning/cache/province_1_5_0_legacy \
+cd training
+python tools/build_legacy_substrate.py \
+  --clean-dir commercial_zoning/cache/clean_lines_aux \
+  --out commercial_zoning/cache/province_1_5_0_legacy \
   --pbf data/china/guangdong-260918.osm.pbf
 ```
 
