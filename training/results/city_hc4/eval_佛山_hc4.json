@@ -1,0 +1,15 @@
+{
+  "city": "佛山",
+  "zones": 1363,
+  "iou": 0.5697,
+  "matched": 0.879,
+  "allref": 0.5008,
+  "bF1": 0.4014,
+  "area_p50": 1.602,
+  "holes": 0,
+  "multipart": 0,
+  "absorbed": 202,
+  "enclave": 2,
+  "elapsed_s": 175.8,
+  "file": "results\\city_hc4\\eval_佛山_hc4.geojson"
+}

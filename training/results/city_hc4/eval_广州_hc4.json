@@ -1,0 +1,15 @@
+{
+  "city": "广州",
+  "zones": 1978,
+  "iou": 0.5604,
+  "matched": 0.8414,
+  "allref": 0.4715,
+  "bF1": 0.327,
+  "area_p50": 1.522,
+  "holes": 0,
+  "multipart": 0,
+  "absorbed": 557,
+  "enclave": 26,
+  "elapsed_s": 424.0,
+  "file": "results\\city_hc4\\eval_广州_hc4.geojson"
+}

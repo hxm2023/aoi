@@ -32,7 +32,7 @@ from tools.finalize_sz_clean import merge_enclaves  # noqa: E402
 
 A = ("+proj=aea +lat_1=21 +lat_2=26 +lat_0=23.5 +lon_0=113.5 "
      "+x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs")
-MODEL = ROOT / "commercial_zoning/models/province_1_5_0_pbf_hc2"
+MODEL = ROOT / "commercial_zoning/models/province_1_5_0_pbf_hc4"
 plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "Arial"]
 
 

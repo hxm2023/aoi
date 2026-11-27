@@ -17,6 +17,7 @@ import shapely
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from pipeline.conflate import classify_cls2  # noqa: E402
 A = ("+proj=aea +lat_1=21 +lat_2=26 +lat_0=23.5 +lon_0=113.5 "
      "+x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs")
 GROUPS = {
@@ -75,8 +76,14 @@ def main():
     perim = np.array([g.length for g in f.geometry])
     pp = 4 * np.pi * area / np.maximum(perim ** 2, 1e-9)
     lines = gpd.read_file(a.lines).to_crs(A)
-    lines = lines[lines.geometry.notna() & ~lines.geometry.is_empty]
-    groups = CLEAN_GROUPS if "cls2" in lines.columns else GROUPS
+    lines = lines[lines.geometry.notna() & ~lines.geometry.is_empty].copy()
+    has_cls2 = ("cls2" in lines.columns
+                and (lines["cls2"].astype("string").fillna("") != "").any())
+    if not has_cls2:
+        lines = classify_cls2(lines)
+    groups = CLEAN_GROUPS if ("cls2" in lines.columns
+                              and (lines["cls2"].astype("string")
+                                   .fillna("") != "").any()) else GROUPS
     # per-face line length by group
     trees = {}
     lens = {}

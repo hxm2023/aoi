@@ -16,6 +16,9 @@ training/results/*.png
 training/results/*.summary.json
 !training/results/guangdong_base_1_5_0.summary.json
 training/results/*.geojson
+training/results/**/*.geojson
+training/results/**/*.pkl
+training/results/**/*.png
 training/results/city_metrics.csv
 # commercial_zoning/cache is both a code package and a data cache root:
 # keep the two source files, ignore generated caches.

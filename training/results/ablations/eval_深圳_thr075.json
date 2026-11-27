@@ -1,0 +1,15 @@
+{
+  "city": "深圳",
+  "zones": 1200,
+  "iou": 0.6095,
+  "matched": 0.686,
+  "allref": 0.4181,
+  "bF1": 0.4789,
+  "area_p50": 0.993,
+  "holes": 0,
+  "multipart": 0,
+  "absorbed": 506,
+  "enclave": 6,
+  "elapsed_s": 414.0,
+  "file": "D:\\huawei-intern\\FineGrid-XGB-1.5.0\\training\\results\\ablations\\eval_深圳_thr075.geojson"
+}

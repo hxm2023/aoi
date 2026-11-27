@@ -1,0 +1,15 @@
+{
+  "city": "珠海",
+  "zones": 459,
+  "iou": 0.6329,
+  "matched": 0.8427,
+  "allref": 0.5334,
+  "bF1": 0.4664,
+  "area_p50": 1.675,
+  "holes": 0,
+  "multipart": 0,
+  "absorbed": 239,
+  "enclave": 2,
+  "elapsed_s": 72.3,
+  "file": "results\\city_hc4\\eval_珠海_hc4.geojson"
+}

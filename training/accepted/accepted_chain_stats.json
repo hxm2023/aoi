@@ -1,0 +1,42 @@
+{
+  "substrate": {
+    "lines": 123507,
+    "faces": 25169
+  },
+  "labels": {
+    "zones": 1697,
+    "iou_greedy_1_1": 0.623,
+    "matched_frac": 0.9936,
+    "iou_allref": 0.619,
+    "boundary_f1@25m": 0.475
+  },
+  "model": {
+    "high_iou_chain": "province_1_5_0_pbf_hc2 (Guangdong 21-city deployment model)",
+    "shenzhen_only": {
+      "oof_auc": 0.810128206513706,
+      "oof_ap": 0.9255528416653429
+    },
+    "shenzhen_only_zones": []
+  },
+  "guided_zones": {
+    "zones": 1689,
+    "iou": 0.6574,
+    "matched": 0.8453,
+    "allref": 0.5557
+  },
+  "final": {
+    "zones": 1470,
+    "iou": 0.6675,
+    "matched": 0.8494,
+    "allref": 0.567
+  },
+  "final_metrics": {
+    "zones": 1470,
+    "iou_greedy_1_1": 0.6675,
+    "matched_frac": 0.8494,
+    "iou_allref": 0.567,
+    "boundary_f1_25m": 0.5065,
+    "holes": 0,
+    "multipart": 0
+  }
+}

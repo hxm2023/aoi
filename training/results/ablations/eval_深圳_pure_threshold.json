@@ -1,0 +1,15 @@
+{
+  "city": "深圳",
+  "zones": 2713,
+  "iou": 0.5872,
+  "matched": 0.976,
+  "allref": 0.5731,
+  "bF1": 0.4846,
+  "area_p50": 0.387,
+  "holes": 0,
+  "multipart": 0,
+  "absorbed": 0,
+  "enclave": 63,
+  "elapsed_s": 436.0,
+  "file": "D:\\huawei-intern\\FineGrid-XGB-1.5.0\\training\\results\\ablations\\eval_深圳_pure_threshold.geojson"
+}

@@ -18,13 +18,13 @@ from tools.compare_iou import load_reference, metrics  # noqa: E402
 
 A = ("+proj=aea +lat_1=21 +lat_2=26 +lat_0=23.5 +lon_0=113.5 "
      "+x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs")
-BASE = ROOT / "commercial_zoning/cache/province_1_5_0"
+BASE = ROOT / "commercial_zoning/cache/province_1_5_0_legacy"
 REF = ROOT / "aoi_zoning_delivery/data/reference/广东移动新版微网格20250420.csv"
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model-dir", default=str(ROOT / "commercial_zoning/models/province_1_5_0_pbf_hc2"))
+    ap.add_argument("--model-dir", default=str(ROOT / "commercial_zoning/models/province_1_5_0_pbf_hc4"))
     ap.add_argument("--thresholds", default="0.6,0.65,0.7,0.75,0.8")
     ap.add_argument("--out", default="")
     ap.add_argument("--cities", default="")
@@ -33,7 +33,10 @@ def main():
     md = Path(a.model_dir)
     feats = json.loads((md / "features.json").read_text(encoding="utf-8"))
     m = xgb.XGBClassifier()
-    m.load_model(str(md / "merge_model.json"))
+    mp = md / "merge_model.ubj"
+    if not mp.exists():
+        mp = md / "merge_model.json"
+    m.load_model(str(mp))
     ts = [float(x) for x in a.thresholds.split(",")]
     ref_all = load_reference(str(REF)).to_crs(A)
     rows = []

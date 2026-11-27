@@ -29,7 +29,7 @@
 <div id="app">
   <aside id="side">
     <h1>FineGrid-XGB 1.5.0</h1>
-    <p class="sub">精细 OSM 底图 + XGB 推理合并 + 后处理/平滑/补缝 · 仅推理，不训练模型</p>
+    <p class="sub">精细 OSM 底图 + hc4 XGB 推理合并 + 30 m 收口/补缝 · 仅推理，不训练模型</p>
     <p class="sub">选择省 → 市/州 → 县/区，或框选范围；无本地 PBF 时会提示缺失 OSM 数据</p>
     <label>选择地区：省 → 市 → 县/区（任选一级）</label>
     <select id="province"><option value="">加载中…</option></select>
@@ -382,7 +382,9 @@ async function generate(bbox, scope="view", adminName=null, level=null, center=n
       + (m.quality_score!=null?`，几何分 <b>${m.quality_score}</b>`:"")
       + (m.bad_zones!=null?`，病态区 <b>${m.bad_zones}</b>`:"")
       + (m.engine?`，${m.engine}`:"")
-      + (j.cached?"（缓存）":`，耗时 ${m.elapsed_s??"?"} s`)
+      + (m.model?` · 模型 ${m.model}`:"")
+      + (m.finish_r_m!=null?` · 收口 ${m.finish_r_m} m`:"")
+      + (j.cached?"（底图缓存）":`，耗时 ${m.elapsed_s??"?"} s`)
       + (mem!=null?`，内存 ${mem} MB`:"");
     setTimeout(()=>{progressWrap.style.display="none";},2500);
     fitZones(fc);

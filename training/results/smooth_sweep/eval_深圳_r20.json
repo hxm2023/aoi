@@ -1,0 +1,15 @@
+{
+  "city": "深圳",
+  "zones": 1263,
+  "iou": 0.6055,
+  "matched": 0.7124,
+  "allref": 0.4313,
+  "bF1": 0.4766,
+  "area_p50": 0.989,
+  "holes": 0,
+  "multipart": 0,
+  "absorbed": 504,
+  "enclave": 2,
+  "elapsed_s": 247.1,
+  "file": "training\\results\\smooth_sweep\\eval_深圳_r20.geojson"
+}

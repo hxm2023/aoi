@@ -1,0 +1,15 @@
+{
+  "city": "深圳",
+  "zones": 883,
+  "iou": 0.4096,
+  "matched": 0.4856,
+  "allref": 0.1989,
+  "bF1": 0.3545,
+  "area_p50": 1.061,
+  "holes": 0,
+  "multipart": 0,
+  "absorbed": 1087,
+  "enclave": 677,
+  "elapsed_s": 716.3,
+  "file": "results\\eval_sz_hc2_refine.geojson"
+}

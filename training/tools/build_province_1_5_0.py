@@ -41,8 +41,8 @@ def copy_if(src: Path, dst: Path):
     return False
 
 
-def city(city: str, force=False):
-    d = OUT / city
+def city(city: str, force=False, out=OUT, reuse=True):
+    d = out / city
     d.mkdir(parents=True, exist_ok=True)
     log = d / "build.log"
     t0 = time.time()
@@ -54,8 +54,8 @@ def city(city: str, force=False):
     pairs = d / "pairs.pkl"
     if pairs.exists() and ufaces.exists() and not force:
         return city, "skip", round(time.time() - t0, 1)
-    # ---- sources that are already built ----
-    if city == "深圳":
+    # ---- optional legacy sources (never used for a clean reproduction) ----
+    if reuse and city == "深圳":
         base = ROOT / "versions" / "1.3.0" / "shenzhen"
         if copy_if(base / "深圳-osm-lines-conflated-v1.geojson", lines) \
                 and copy_if(base / "_oracle_conflated_v1-faces.geojson", ofaces) \
@@ -67,7 +67,7 @@ def city(city: str, force=False):
                 shutil.copyfile(ROOT / "versions/1.3.0/shenzhen/_upper3_conflated_v1.geojson", upper)
             (d / "meta.json").write_text(json.dumps({"city": city, "source": "1.5.0_substrate_reuse"}, ensure_ascii=False), encoding="utf-8")
             return city, "reuse-sz", round(time.time() - t0, 1)
-    if city in ("佛山", "广州", "韶关") and (UNIV / city / "pairs.pkl").exists():
+    if reuse and city in ("佛山", "广州", "韶关") and (UNIV / city / "pairs.pkl").exists():
         src = UNIV / city
         for a, b in [("lines.geojson", lines), ("oracle.geojson", oracle),
                      ("oracle-faces.geojson", ofaces), ("upper3.geojson", upper),
@@ -100,16 +100,24 @@ def city(city: str, force=False):
 
 
 def main():
+    global CLEAN
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", nargs="*", default=None)
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--jobs", type=int, default=2)
+    ap.add_argument("--out", default=str(OUT))
+    ap.add_argument("--clean-dir", default=str(CLEAN))
+    ap.add_argument("--no-reuse", action="store_true",
+                    help="ignore legacy Shenzhen/work_universal caches")
     a = ap.parse_args()
-    OUT.mkdir(parents=True, exist_ok=True)
+    CLEAN = Path(a.clean_dir)
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
     cities = a.only or sorted(p.name for p in CLEAN.iterdir() if p.is_dir())
     print("cities", len(cities), cities, flush=True)
     with cf.ThreadPoolExecutor(max_workers=max(1, a.jobs)) as ex:
-        futs = {ex.submit(city, c, a.force): c for c in cities}
+        futs = {ex.submit(city, c, a.force, out, not a.no_reuse): c
+                for c in cities}
         for f in cf.as_completed(futs):
             c = futs[f]
             try:

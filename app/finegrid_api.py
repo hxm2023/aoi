@@ -117,6 +117,9 @@ def _start(req):
             "elapsed_s": stats.get("elapsed_s"),
             "guided_target_km2": stats.get("guided_target_km2"),
             "absorb_km2": stats.get("absorb_km2"),
+            "finish_r_m": stats.get("finish_r_m"),
+            "model": stats.get("model"),
+            "scheme": stats.get("scheme"),
             "holes": stats.get("holes"),
             "multipart": stats.get("multipart"),
             "bad_zones": int(stats.get("holes", 0))

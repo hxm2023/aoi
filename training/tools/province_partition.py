@@ -32,7 +32,7 @@ from tools.finalize_sz_clean import merge_enclaves  # noqa: E402
 
 A = ("+proj=aea +lat_1=21 +lat_2=26 +lat_0=23.5 +lon_0=113.5 "
      "+x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs")
-BASE = ROOT / "commercial_zoning/cache/province_1_5_0"
+BASE = ROOT / "commercial_zoning/cache/province_1_5_0_legacy"
 REF = ROOT / "aoi_zoning_delivery/data/reference/广东移动新版微网格20250420.csv"
 plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "Arial"]
 
@@ -56,7 +56,10 @@ def predict(city, model_dir, probs="model", pairs_name="pairs.pkl"):
     X = d[feats].astype(float).replace([np.inf, -np.inf], 0).fillna(0)
     if probs == "model":
         m = xgb.XGBClassifier()
-        m.load_model(str(md / "merge_model.json"))
+        mp = md / "merge_model.ubj"
+        if not mp.exists():
+            mp = md / "merge_model.json"
+        m.load_model(str(mp))
         p = m.predict_proba(X)[:, 1]
     else:
         o = pd.read_pickle(md / "oof_city.pkl")
@@ -177,11 +180,12 @@ def draw(z, out_png, title, ref_city=None):
 
 
 def main():
+    global BASE
     ap = argparse.ArgumentParser()
     ap.add_argument("--city", default="")
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--cities", default="")
-    ap.add_argument("--model-dir", default=str(ROOT / "commercial_zoning/models/province_1_5_0_pbf_hc2"))
+    ap.add_argument("--model-dir", default=str(ROOT / "commercial_zoning/models/province_1_5_0_pbf_hc4"))
     ap.add_argument("--probs", default="model",
                     choices=["model", "oof_test", "oof_val"])
     ap.add_argument("--thr", type=float, default=0.8)
@@ -192,9 +196,11 @@ def main():
     ap.add_argument("--frame", default="ref", choices=["ref", "osm"])
     ap.add_argument("--faces-name", default="upper3-faces.geojson")
     ap.add_argument("--pairs-name", default="pairs_pbf.pkl")
+    ap.add_argument("--pairs-dir", default=str(BASE))
     ap.add_argument("--light", action="store_true")
     ap.add_argument("--out-dir", default=str(BASE / "results" / "model"))
     a = ap.parse_args()
+    BASE = Path(a.pairs_dir)
     cities = ([p.name for p in BASE.iterdir()
                if (p / "pairs.pkl").exists()] if a.all else [a.city])
     if a.cities:

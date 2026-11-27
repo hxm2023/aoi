@@ -1,0 +1,18 @@
+{
+  "status": "done",
+  "zones": 1966,
+  "meta": {
+    "engine": "FineGrid-XGB 1.5.0",
+    "elapsed_s": 1266.8,
+    "guided_target_km2": 0.6,
+    "absorb_km2": 0.3,
+    "finish_r_m": 30.0,
+    "model": "province_1_5_0_pbf_hc4",
+    "scheme": "uniform_cls2_v1|province_1_5_0_pbf_hc4|r30|prep_legacy_v1",
+    "holes": 0,
+    "multipart": 0,
+    "bad_zones": 0,
+    "region": "广州"
+  },
+  "note": "recorded from /zoning/jobs; eval-frame exact match"
+}

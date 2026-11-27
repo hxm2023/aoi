@@ -1,0 +1,12 @@
+{
+  "version": "province-1.5.0-deploy",
+  "rows": 733311,
+  "features": 90,
+  "train_auc": 0.9866,
+  "params": {
+    "trees": 12000,
+    "depth": 7,
+    "learning_rate": 0.03,
+    "max_bin": 64
+  }
+}

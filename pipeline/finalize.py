@@ -8,7 +8,8 @@ import numpy as np
 import shapely
 
 from .geo import A
-from .seal_ops import _closes_ring, fill_gaps, resolve_overlaps, strip_holes
+from .seal_ops import (_closes_ring, fill_gaps, resolve_overlaps,
+                       split_multipart, strip_holes)
 
 
 def absorb(geoms, thr, cap, passes=8):
@@ -240,6 +241,74 @@ def guided_draft(geoms, pairs, prob, thr, target=0.6, min_p=0.5,
         if ps:
             out.append(shapely.union_all(ps))
     return gpd.GeoDataFrame(geometry=out, crs=A)
+
+
+def refine_best(z, frame, r=30.0, progress=None):
+    """Finishing chain shared by training and inference.
+
+    Morphological round-trip at ``r`` metres, topology seal, multipart split,
+    then a second seal pass.  The archived acceptance chain used r=60; the
+    delivery radius is 30 after visual/metric comparison (less corner
+    erosion, same topology guarantees).
+    """
+    def rep(pct, msg):
+        if progress is not None:
+            progress(f"精细收口 · {r:g} m", pct, msg)
+    z = z[z.geometry.notna() & ~z.geometry.is_empty].reset_index(drop=True)
+    z = z.to_crs(A)
+    rep(90, f"{r:g} m 形态平滑")
+    geoms = []
+    for g in z.geometry:
+        g = shapely.make_valid(g)
+        g = shapely.buffer(
+            shapely.buffer(g, -r, quad_segs=4, join_style="round"),
+            r, quad_segs=8, join_style="round")
+        geoms.append(shapely.set_precision(shapely.make_valid(g), 0.01))
+    z = gpd.GeoDataFrame(z.drop(columns="geometry"), geometry=geoms, crs=A)
+    rep(91, "消重叠 · 补缝")
+    z = resolve_overlaps(z)
+    z = fill_gaps(z, frame)
+    z = resolve_overlaps(z)
+    z = strip_holes(z)
+    rep(92, "多部件拆分")
+    z = split_multipart(z, promote_km2=0.15)
+    z = resolve_overlaps(z)
+    z = fill_gaps(z, frame)
+    z = resolve_overlaps(z)
+    z = strip_holes(z)
+    rep(93, "包络合并 · 拓扑收尾")
+    for _ in range(4):
+        geoms = [shapely.make_valid(g) for g in z.geometry]
+        geoms, _n = merge_enclaves(geoms)
+        z = gpd.GeoDataFrame(geometry=geoms, crs=A)
+        z = _keep_single(z)
+        z = resolve_overlaps(z)
+        z = fill_gaps(z, frame)
+        z = resolve_overlaps(z)
+        z = strip_holes(z)
+        holes = sum(len(p.interiors) for g in z.geometry
+                    for p in shapely.get_parts(g) if p.geom_type == "Polygon")
+        mp = sum(len(shapely.get_parts(g)) > 1 for g in z.geometry)
+        if holes == 0 and mp == 0:
+            break
+    # Last mile: no fill after this point, so keep-single / strip cannot be
+    # undone by a new multipart union.
+    for _ in range(3):
+        geoms = [shapely.make_valid(g) for g in z.geometry]
+        geoms, _n = merge_enclaves(geoms)
+        z = gpd.GeoDataFrame(geometry=geoms, crs=A)
+        z = _keep_single(z)
+        z = resolve_overlaps(z)
+        z = strip_holes(z)
+        holes = sum(len(p.interiors) for g in z.geometry
+                    for p in shapely.get_parts(g) if p.geom_type == "Polygon")
+        mp = sum(len(shapely.get_parts(g)) > 1 for g in z.geometry)
+        if holes == 0 and mp == 0:
+            break
+    # resolve_overlaps can shave off a zero-area sliver on the last pass;
+    # split only, do not resolve again, so the multipart invariant holds.
+    z = split_multipart(z, promote_km2=0.15)
+    return z.reset_index(drop=True)
 
 
 def _keep_single(z):

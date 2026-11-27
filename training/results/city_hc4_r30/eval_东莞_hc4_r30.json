@@ -1,0 +1,15 @@
+{
+  "city": "东莞",
+  "zones": 1256,
+  "iou": 0.5377,
+  "matched": 0.8231,
+  "allref": 0.4426,
+  "bF1": 0.3912,
+  "area_p50": 1.313,
+  "holes": 0,
+  "multipart": 0,
+  "absorbed": 109,
+  "enclave": 2,
+  "elapsed_s": 145.0,
+  "file": "results\\city_hc4_r30\\eval_东莞_hc4_r30.geojson"
+}

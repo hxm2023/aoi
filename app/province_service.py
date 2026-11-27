@@ -273,6 +273,8 @@ def _aggregate_province(row, pbf, frame_geom, admin_gdf, threshold, progress):
                     st = json.loads(stp.read_text(encoding="utf-8"))
             except Exception:  # noqa: BLE001
                 gj = None
+        if gj is not None and st.get("scheme") != runner.scheme_id():
+            gj = None
         if gj is None:
             def sub(stage, pct, msg=None, _b=base, _s=span, _l=label):
                 p = max(0.0, min(100.0, float(pct)))
@@ -340,8 +342,12 @@ def _aggregate_province(row, pbf, frame_geom, admin_gdf, threshold, progress):
         "zones": int(len(z)),
         "area_km2": round(float(cov.area) / 1e6, 1),
         "threshold": round(threshold, 3),
-        "guided_target_km2": 0.6,
-        "absorb_km2": 0.30,
+        "guided_target_km2": runner.UNIFORM_PROFILE["guided_target"],
+        "absorb_km2": runner.UNIFORM_PROFILE["absorb_km2"],
+        "finish_r_m": runner.UNIFORM_PROFILE["finish_r_m"],
+        "profile": runner.UNIFORM_PROFILE["name"],
+        "model": runner.MODEL_DIR.name,
+        "scheme": runner.scheme_id(),
         "holes": holes,
         "multipart": multipart,
         "mode": "province_aggregate",
@@ -417,6 +423,9 @@ def start_province(req):
             "elapsed_s": stats.get("elapsed_s"),
             "guided_target_km2": stats.get("guided_target_km2"),
             "absorb_km2": stats.get("absorb_km2"),
+            "finish_r_m": stats.get("finish_r_m"),
+            "model": stats.get("model"),
+            "scheme": stats.get("scheme"),
             "holes": stats.get("holes"),
             "multipart": stats.get("multipart"),
             "bad_zones": int(stats.get("holes", 0))

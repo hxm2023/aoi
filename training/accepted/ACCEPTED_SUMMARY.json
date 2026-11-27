@@ -1,0 +1,58 @@
+{
+  "final_zones": "final3_r60.geojson",
+  "zones": 1470,
+  "iou_greedy_1_1": 0.6675,
+  "matched_frac": 0.8494,
+  "iou_allref": 0.567,
+  "boundary_f1_25m": 0.5065,
+  "area_p10_km2": 0.406,
+  "area_p50_km2": 0.814,
+  "zones_lt_0.5km2": 273,
+  "holes": 0,
+  "multipart": 0,
+  "method": "detailed OSM substrate + Guangdong large XGB + XGB-guided small-zone merge (target 0.6) + absorb 0.3 km2 + topology postprocess + targeted smoothing 60 m",
+  "comparison": {
+    "old_high_iou": {
+      "zones": 1751,
+      "iou": 0.6391,
+      "matched": 0.9537,
+      "allref": 0.6095,
+      "lt_0.5": 555
+    },
+    "old_balanced": {
+      "zones": 1510,
+      "iou": 0.645,
+      "matched": 0.86,
+      "allref": 0.5547,
+      "lt_0.5": 282
+    },
+    "xgb_merge_a0.3": {
+      "zones": 1463,
+      "iou": 0.6574,
+      "matched": 0.8453,
+      "allref": 0.5557,
+      "lt_0.5": 266
+    },
+    "final_r60": {
+      "zones": 1470,
+      "iou": 0.6675,
+      "matched": 0.8494,
+      "allref": 0.567,
+      "lt_0.5": 273
+    }
+  },
+  "final_filled": {
+    "zones": 1470,
+    "iou": 0.6677,
+    "matched": 0.8494,
+    "allref": 0.5671,
+    "area_km2": 2438.0,
+    "gaps_km2": 0.0001,
+    "holes": 0,
+    "multipart": 0,
+    "changed_zones_for_gap_fill": 396,
+    "gap_pieces_filled": 535,
+    "note": "gaps inside reference footprint assigned to longest-shared-boundary neighbor; Voronoi split for complex gaps; micro-zones removed; no re-partition/smoothing of good zones"
+  },
+  "source": "accepted Shenzhen final3_filled_delivery.geojson"
+}

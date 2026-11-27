@@ -6,27 +6,20 @@ downloaded: "目前无本地 OSM 数据，暂不支持".  Guangdong is the prior
 coverage and is resolved first for any bbox that it contains.
 """
 from __future__ import annotations
-import json, os, subprocess, sys, time, urllib.request
+import json, os, sys
 from pathlib import Path
 import shapely
-from shapely.geometry import shape, box as shp_box
+from shapely.geometry import box as shp_box
 
 ROOT = Path(__file__).resolve().parents[1]
 HERE = Path(__file__).resolve().parent
 REGISTRY = HERE / "pbf_registry.json"
 CACHE = HERE / "cache" / "pbf"
 CACHE.mkdir(parents=True, exist_ok=True)
-INDEX_PATH = HERE / "cache" / "geofabrik_index.json"
-INDEX_URL = "https://download.geofabrik.de/index-v1.json"
-CHINA_BASE = "https://download.openstreetmap.fr/extracts/asia/china/"
 CHINA_JSON = HERE / "china_provinces.json"
 LOCAL_DIR = ROOT / "data" / "china"
-# The standalone delivery package has its own data/china; when it runs from
-# inside the repo, also see the operator's full local extract set.
-LOCAL_DIRS = [LOCAL_DIR, ROOT.parent / "data" / "china"]
+LOCAL_DIRS = [LOCAL_DIR]
 DEFAULT = LOCAL_DIR / "guangdong-260918.osm.pbf"
-UA = "aoi-engine-commercial/1.0"
-MAX_DOWNLOAD_MB = int(os.environ.get("XGB_MAX_DOWNLOAD_MB", "800"))
 _LOCAL_PBFS = None
 
 
@@ -253,71 +246,6 @@ def _local(bbox):
     if cover.intersection(target).area >= target.area * 0.90:
         return str(p)
     return None
-
-
-def _index():
-    if not INDEX_PATH.exists():
-        req = urllib.request.Request(INDEX_URL, headers={"User-Agent": UA})
-        with urllib.request.urlopen(req, timeout=120) as r:
-            INDEX_PATH.write_bytes(r.read())
-    return json.loads(INDEX_PATH.read_text(encoding="utf-8"))
-
-
-def _region_for(bbox):
-    target = shp_box(*bbox)
-    best = None
-    for f in _index().get("features", []):
-        geom = f.get("geometry")
-        if not geom:
-            continue
-        try:
-            g = shape(geom)
-        except Exception:
-            continue
-        if not g.contains(target):
-            continue
-        a = g.area
-        if best is None or a < best[0]:
-            best = (a, f)
-    return best[1] if best else None
-
-
-def _download(url, dest):
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dest.with_suffix(".part")
-    last = None
-    for attempt in range(3):
-        try:
-            req = urllib.request.Request(
-                url, headers={"User-Agent": UA, "Accept": "*/*"})
-            with urllib.request.urlopen(req, timeout=180) as r:
-                size = int(r.headers.get("Content-Length") or 0)
-                if size and size / 1e6 > MAX_DOWNLOAD_MB:
-                    raise ValueError(
-                        f"OSM extract too large: {size/1e6:.0f} MB "
-                        f"(limit {MAX_DOWNLOAD_MB}); choose a smaller region")
-                with open(tmp, "wb") as f:
-                    while True:
-                        chunk = r.read(1 << 20)
-                        if not chunk:
-                            break
-                        f.write(chunk)
-            tmp.replace(dest)
-            return
-        except ValueError:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            last = exc
-            time.sleep(2 ** attempt)
-    # Some hosts reset Python's TLS handshake; curl is the fallback.
-    try:
-        subprocess.run(["curl", "-L", "--fail", "--retry", "2",
-                        "-A", UA, "-o", str(tmp), url],
-                       check=True, timeout=1800)
-        tmp.replace(dest)
-        return
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(f"download failed: {last or exc}") from exc
 
 
 def resolve(bbox, allow_download=None):

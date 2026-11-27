@@ -19,9 +19,9 @@ DROP = {"i", "j", "label", "label_zone_orig", "city", "tx", "ty"}
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--pairs-dir", default=str(ROOT / "commercial_zoning/cache/province_1_5_0"))
+    ap.add_argument("--pairs-dir", default=str(ROOT / "commercial_zoning/cache/province_1_5_0_legacy"))
     ap.add_argument("--pairs-name", default="pairs_pbf.pkl")
-    ap.add_argument("--out", default=str(ROOT / "commercial_zoning/models/province_1_5_0_pbf_hc2"))
+    ap.add_argument("--out", default=str(ROOT / "commercial_zoning/models/province_1_5_0_pbf_hc4"))
     ap.add_argument("--trees", type=int, default=12000)
     ap.add_argument("--depth", type=int, default=7)
     ap.add_argument("--jobs", type=int, default=4)

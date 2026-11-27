@@ -15,8 +15,7 @@ import shapely
 import xgboost as xgb
 from shapely.geometry import mapping
 
-from . import calibration, faces, finalize, lines, naming, pairs as pairmod, pbf_features
-from .conflate import conflate, classify_cls2
+from . import calibration, finalize, legacy_online, naming
 from .geo import A, ROOT, read_frame
 from .reference import load_reference, metrics
 
@@ -34,8 +33,12 @@ REF_CSV = _first(
     / "广东移动新版微网格20250420.csv")
 FRAME_DIR = ROOT / "data" / "frames"
 CACHE_DIR = ROOT / "cache"
+LEGACY_SUBSTRATE = (ROOT / "training" / "commercial_zoning" / "cache"
+                    / "province_1_5_0_legacy")
 MODEL_DIR = _first(
+    ROOT / "models" / "province_1_5_0_pbf_hc4",
     ROOT / "models" / "province_1_5_0_pbf_hc2",
+    ROOT / "commercial_zoning" / "models" / "province_1_5_0_pbf_hc4",
     ROOT / "commercial_zoning" / "models" / "province_1_5_0_pbf_hc2")
 CALIB = _first(
     ROOT / "models" / "area_calibration.pkl",
@@ -57,26 +60,28 @@ GUANGDONG_CITIES = [
     "肇庆", "清远", "韶关", "河源", "梅州", "汕头", "汕尾", "潮州",
     "揭阳", "湛江", "茂名", "阳江", "云浮",
 ]
-DEFAULT_THRESHOLD = {"深圳": 0.70}
-CITY_PROFILES = {
-    # Validated acceptance profile.  The shipped model was trained with the
-    # Shenzhen cls2 boundary features populated; fresh builds before r7 zeroed
-    # them, which produced a different partition.  Keep the profile explicit
-    # and auditable until a uniformly retrained model replaces it.
-    "深圳": {
-        "name": "shenzhen_v1",
-        "cls2_mode": "auto",
-        "guided_target": 0.6,
-        "guided_min_p": 0.5,
-        "guided_cap": 40.0,
-        "absorb_km2": 0.30,
-        "smooth_all_m": 20.0,
-        "smooth_target_m": 60.0,
-    },
+DEFAULT_THRESHOLD: dict = {}
+UNIFORM_PROFILE = {
+    "name": "uniform_cls2_v1",
+    "cls2_mode": "auto",
+    "guided_target": 0.6,
+    "guided_min_p": 0.5,
+    "guided_cap": 40.0,
+    "absorb_km2": 0.30,
+    "finish_r_m": 30.0,
 }
 MAX_BBOX_KM2 = 25000.0
-RESULT_CACHE_VERSION = "fgxgb-1.5.0-r6"
+BUILDER_VERSION = "legacy_online_v1"
 CLS2_MODES = ("populate", "train", "after")
+
+
+def scheme_id():
+    """Model + finishing fingerprint; cached results from other schemes must
+    not be reused after a model or radius change."""
+    return (f"{UNIFORM_PROFILE['name']}|{MODEL_DIR.name}"
+            f"|r{float(UNIFORM_PROFILE['finish_r_m']):g}|prep_legacy_v1")
+
+
 _MODE = os.environ.get("AOI_CLS2_MODE", "train")
 _MODEL = None
 _FEATS = None
@@ -261,44 +266,43 @@ def _prepare_cache(region, pbf, frame_path):
     return d, fp
 
 
-def _load_final_cache(d, threshold, progress):
-    """Return a verified final result from a seeded cache, if present."""
-    marker_p = d / f"final_cache_t{threshold:.2f}.json"
-    zones_p = d / f"zones_t{threshold:.2f}.geojson"
-    stats_p = d / f"stats_t{threshold:.2f}.json"
-    if not (marker_p.exists() and zones_p.exists()):
-        return None
-    try:
-        marker = json.loads(marker_p.read_text(encoding="utf-8"))
-        if str(marker.get("version")) != RESULT_CACHE_VERSION:
-            return None
-        gj = json.loads(zones_p.read_text(encoding="utf-8"))
-        if not gj.get("features"):
-            return None
-        stats = (json.loads(stats_p.read_text(encoding="utf-8"))
-                 if stats_p.exists() else {})
-        old_elapsed = stats.get("elapsed_s")
-        stats.update({
-            "zones": int(marker.get("zones") or len(gj["features"])),
-            "result_cached": True,
-            "substrate_cached": True,
-            "source_elapsed_s": old_elapsed,
-            "elapsed_s": 0.0,
-            "cache_version": RESULT_CACHE_VERSION,
-        })
-        progress("加载结果缓存", 100, f"{stats['zones']} 区 · {d.name}")
-        print("final result cache", d.name, stats["zones"], flush=True)
-        return gj, stats
-    except Exception as exc:  # noqa: BLE001
-        print("final result cache skipped", exc, flush=True)
-        return None
-
-
 def _profile(region):
-    return CITY_PROFILES.get(str(region.get("city") or ""))
+    return UNIFORM_PROFILE
+
+
+def _legacy_city_substrate(region):
+    """Training-paradigm substrate for a Guangdong city, if shipped.
+
+    The accepted evaluation figures use the 1.3.0 select/clean/conflate
+    chain; reusing these files keeps online city inference byte-for-byte on
+    the same substrate.  This is preprocessing data, not a final result.
+    """
+    if region.get("kind") != "city":
+        return None
+    city = str(region.get("city") or "")
+    if city not in GUANGDONG_CITIES:
+        return None
+    d = LEGACY_SUBSTRATE / city
+    files = {
+        "lines": d / "lines.geojson",
+        "faces": d / "upper3-faces.geojson",
+        "pairs": d / "pairs.pkl",
+        "pairs_pbf": d / "pairs_pbf.pkl",
+        "frame": d / "eval_frame.geojson",
+    }
+    if not (files["lines"].exists() and files["faces"].exists()
+            and files["pairs_pbf"].exists()):
+        return None
+    return files
 
 
 def _ensure_substrate(region, pbf, frame_path, d, progress, mode):
+    legacy = _legacy_city_substrate(region)
+    if legacy is not None:
+        progress("训练同口径底图", 82, f"{region.get('city')} · 1.3.0 旧范式")
+        return (legacy["lines"], legacy["faces"],
+                legacy["pairs"] if legacy["pairs"].exists() else None,
+                legacy["pairs_pbf"], True)
     meta_p = d / "meta.json"
     meta = {}
     if meta_p.exists():
@@ -308,9 +312,8 @@ def _ensure_substrate(region, pbf, frame_path, d, progress, mode):
             meta = {}
     prof = _profile(region)
     pname = prof.get("name") if prof else None
-    pair_mode = (prof.get("cls2_mode") if prof is not None
-                 else ("zero" if mode == "train" else "auto"))
-    rebuild = (meta.get("feature_mode") not in (None, mode)
+    rebuild = (meta.get("builder") != BUILDER_VERSION
+               or meta.get("feature_mode") not in (None, mode)
                or (pname is not None and meta.get("profile") != pname))
     lines_path = d / "lines.geojson"
     faces_path = d / "faces.geojson"
@@ -321,37 +324,14 @@ def _ensure_substrate(region, pbf, frame_path, d, progress, mode):
     if cached:
         progress("底图缓存已就绪", 82, f"{round(time.time() - t0, 1)} s")
         return lines_path, faces_path, pairs_path, pairs_pbf, True
-    bounds = tuple(float(x) for x in gpd.read_file(frame_path).total_bounds)
-    if not lines_path.exists() or rebuild:
-        progress("读取 OSM PBF · 清理线网", 10, "道路/铁路/水系")
-        raw = d / "lines_raw.geojson"
-        lines.build_lines(bounds, raw, pbf)
-        progress("语义合并 · 去重与断点修复", 28, "同名/同 ref、面积边、行政界")
-        use_cls2 = (mode == "populate"
-                    or (prof is not None
-                        and prof.get("cls2_mode") == "auto"))
-        if use_cls2:
-            conflate(raw, lines_path, populate_cls2=True)
-        else:
-            conflate(raw, lines_path, populate_cls2=False)
-            if mode == "after":
-                g = gpd.read_file(lines_path).to_crs(A)
-                g = classify_cls2(g)
-                g.to_crs(4326).to_file(lines_path, driver="GeoJSON")
-        raw.unlink(missing_ok=True)
-    progress("构建面网 · 多边形化", 44, "OSM 线网切割")
-    if not faces_path.exists() or rebuild:
-        faces.build_faces(lines_path, frame_path, faces_path)
-    progress("面块对特征", 58, "几何/边界/邻接")
-    if not pairs_path.exists() or rebuild:
-        pairmod.build_pairs(faces_path, lines_path, pairs_path,
-                            region.get("city", "custom"),
-                            cls2_mode=pair_mode)
-    progress("OSM 上下文特征", 72, "用地/自然/POI 密度")
-    if not pairs_pbf.exists() or rebuild:
-        pbf_features.add_pbf_features(pairs_path, faces_path, pbf, pairs_pbf)
+    label = (region.get("city") or region.get("label")
+             or region.get("frame") or "custom")
+    lines_path, faces_path, pairs_path, pairs_pbf = (
+        legacy_online.build_online_substrate(
+            pbf, frame_path, label, d, progress=progress))
     meta.update({"feature_mode": mode, "profile": pname,
-                 "cls2_mode": pair_mode if pname else None,
+                 "builder": BUILDER_VERSION,
+                 "chain": "legacy_online",
                  "region": region,
                  "pbf": pbf.name, "built_s": round(time.time() - t0, 1)})
     meta_p.write_text(json.dumps(meta, ensure_ascii=False, indent=2),
@@ -384,9 +364,6 @@ def run_region(pbf_name, region, threshold, want_ref=False, progress=None,
     cap = MAX_BBOX_KM2 if max_km2 is None else float(max_km2)
     pbf, region, frame_path = _validate(region, pbf_name, cap)
     d, cache_frame = _prepare_cache(region, pbf, frame_path)
-    seeded = _load_final_cache(d, float(threshold), progress)
-    if seeded is not None:
-        return seeded
     lines_path, faces_path, _pairs_path, pairs_pbf, cached = _ensure_substrate(
         region, pbf, cache_frame, d, progress, mode)
     prof = _profile(region) or {}
@@ -395,8 +372,7 @@ def run_region(pbf_name, region, threshold, want_ref=False, progress=None,
     guided_min_p = float(prof.get("guided_min_p", 0.5))
     guided_cap = float(prof.get("guided_cap", 40.0))
     absorb_km2 = float(prof.get("absorb_km2", 0.30))
-    smooth_all = float(prof.get("smooth_all_m", 20.0))
-    smooth_target = float(prof.get("smooth_target_m", 60.0))
+    finish_r = float(prof.get("finish_r_m", 30.0))
     progress("加载模型 · 推理", 84, f"面块对阈值 {threshold:.2f}")
     model, feats = _model()
     d_pairs = pd.read_pickle(pairs_pbf)
@@ -416,13 +392,20 @@ def run_region(pbf_name, region, threshold, want_ref=False, progress=None,
     progress("面积校准 · 碎块吸收", 90, "OSM-only 校准")
     cal = calibration.load_model(CALIB)
     p50 = calibration.predict_p50(cal, faces_path, pairs_pbf)
-    frame = read_frame(cache_frame)
+    legacy_info = _legacy_city_substrate(region)
+    frame_source = "region_frame"
+    if (legacy_info is not None and legacy_info.get("frame") is not None
+            and legacy_info["frame"].exists()):
+        frame_path_use = legacy_info["frame"]
+        frame_source = "legacy_eval_frame"
+    else:
+        frame_path_use = cache_frame
+    frame = read_frame(frame_path_use)
     progress("拓扑收口", 93, "补缝/消叠/清洞/简化")
     z, nabs, nmerge = finalize.postprocess(z, frame, absorb_km2)
-    progress("形态平滑 · 最终补缝", 94,
+    progress("精细收口 · 最终补缝", 94,
              "FineGrid-XGB 收口" + (f" · {pname}" if pname else ""))
-    z = finalize.smooth_final(z, frame, r_all=smooth_all,
-                              r_target=smooth_target, progress=progress)
+    z = finalize.refine_best(z, frame, r=finish_r, progress=progress)
     geoms2 = [shapely.make_valid(g) for g in z.geometry]
     holes = int(sum(len(q.interiors) for g in geoms2
                     for q in shapely.get_parts(g)
@@ -469,14 +452,19 @@ def run_region(pbf_name, region, threshold, want_ref=False, progress=None,
         "guided_target_km2": guided_target,
         "target_p50_km2": round(float(p50), 2),
         "absorb_km2": round(float(absorb_km2), 2),
-        "smooth_all_m": smooth_all,
-        "smooth_target_m": smooth_target,
+        "finish_r_m": finish_r,
         "profile": pname,
+        "model": MODEL_DIR.name,
+        "scheme": scheme_id(),
         "absorbed": int(nabs),
         "enclave_merged": int(nmerge),
         "holes": holes,
         "multipart": multipart,
         "substrate_cached": bool(cached),
+        "substrate_source": (
+            "legacy_city_cache" if _legacy_city_substrate(region) is not None
+            else ("online_legacy_cache" if cached else "online_legacy_chain")),
+        "frame_source": frame_source,
         "feature_mode": mode,
         "naming": "osm",
         "elapsed_s": round(time.time() - t0, 1),
@@ -494,9 +482,13 @@ def run_region(pbf_name, region, threshold, want_ref=False, progress=None,
 def model_info():
     feats = json.loads((MODEL_DIR / "features.json").read_text(
         encoding="utf-8"))
-    return {"name": "province_1_5_0_pbf_hc2",
-            "features": len(feats), "scope": "Guangdong 21 cities",
-            "city_holdout_auc": 0.812, "tile_cv_auc": 0.819}
+    meta_p = MODEL_DIR / "metadata.json"
+    meta = (json.loads(meta_p.read_text(encoding="utf-8"))
+            if meta_p.exists() else {})
+    return {"name": MODEL_DIR.name, "features": len(feats),
+            "scope": "Guangdong 21 cities",
+            "train_auc": meta.get("train_auc"),
+            "rows": meta.get("rows")}
 
 
 def catalog():

@@ -1,0 +1,15 @@
+{
+  "city": "深圳",
+  "zones": 1481,
+  "iou": 0.621,
+  "matched": 0.8155,
+  "allref": 0.5064,
+  "bF1": 0.4866,
+  "area_p50": 0.82,
+  "holes": 0,
+  "multipart": 0,
+  "absorbed": 504,
+  "enclave": 3,
+  "elapsed_s": 225.3,
+  "file": "training\\results\\ablations\\eval_深圳_target040.geojson"
+}

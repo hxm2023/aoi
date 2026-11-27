@@ -5,7 +5,7 @@ city against the reference grid, and writes a CSV table like
 ``results/city_metrics.csv``.
 
 Usage:
-  python tools/city_metrics.py --dir commercial_zoning/cache/province_1_5_0/results/model_pbfhc2_t08 \
+  python tools/city_metrics.py --dir <含 <城市>.geojson 的目录> \
       --out results/city_metrics.csv
 """
 from __future__ import annotations

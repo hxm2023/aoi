@@ -1,12 +1,15 @@
 """Component draft and topology-safe finalize for a partition."""
 from __future__ import annotations
 
+from collections import defaultdict
+
 import geopandas as gpd
 import numpy as np
 import shapely
 
 from .geo import A
-from .seal_ops import _closes_ring, fill_gaps, resolve_overlaps, strip_holes
+from .seal_ops import (_closes_ring, fill_gaps, resolve_overlaps,
+                       split_multipart, strip_holes)
 
 
 def absorb(geoms, thr, cap, passes=8):
@@ -155,3 +158,254 @@ def postprocess(z, frame, absorb_km2=0.10):
     z = gpd.GeoDataFrame(geometry=geoms, crs=A)
     z["zone"] = range(1, len(z) + 1)
     return z, int(nabs), int(nmerge)
+
+
+def guided_draft(geoms, pairs, prob, thr, target=0.6, min_p=0.5,
+                 cap=40.0, passes=30, progress=None):
+    """Union at thr, then merge small components along strongest XGB edges."""
+    n = len(geoms)
+    ii = pairs["i"].to_numpy(int)
+    jj = pairs["j"].to_numpy(int)
+    bm = (pairs["border_m"].to_numpy(float)
+          if "border_m" in pairs.columns else np.ones(len(pairs)))
+    fa = np.array([g.area / 1e6 for g in geoms])
+
+    def find(parent, x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    parent = list(range(n))
+    for k in range(len(pairs)):
+        if prob[k] >= thr:
+            a, b = find(parent, int(ii[k])), find(parent, int(jj[k]))
+            if a != b:
+                parent[b] = a
+    for it in range(passes):
+        if progress is not None:
+            progress("XGB 引导合并", 86 + min(3, it * 3 / max(passes, 1)),
+                     f"第 {it + 1} 轮")
+        ra = defaultdict(float)
+        for i in range(n):
+            ra[find(parent, i)] += fa[i]
+        small = [r for r in ra if ra[r] < target]
+        if not small:
+            break
+        agg = {}
+        for k in range(len(pairs)):
+            a, b = find(parent, int(ii[k])), find(parent, int(jj[k]))
+            if a == b:
+                continue
+            key = (a, b) if a < b else (b, a)
+            cur = agg.get(key)
+            if cur is None:
+                cur = [0.0, 0.0, 0.0]
+            cur[0] = max(cur[0], float(prob[k]))
+            cur[1] += float(prob[k]) * float(bm[k])
+            cur[2] += float(bm[k])
+            agg[key] = cur
+        neigh = defaultdict(list)
+        for (a, b), v in agg.items():
+            neigh[a].append((b, v))
+            neigh[b].append((a, v))
+        merged = 0
+        for r0 in sorted(small, key=lambda x: ra[x]):
+            r = find(parent, r0)
+            if ra[r] >= target:
+                continue
+            best = None
+            for o, v in neigh.get(r, ()):
+                o = find(parent, o)
+                if o == r or ra[o] + ra[r] > cap:
+                    continue
+                score = (v[0], v[1] / max(v[2], 1e-9), ra[o])
+                if best is None or score > best[0]:
+                    best = (score, o)
+            if best is None or best[0][0] < min_p:
+                continue
+            o = best[1]
+            parent[o] = r
+            ra[r] += ra[o]
+            merged += 1
+        if not merged:
+            break
+    roots = {}
+    for i in range(n):
+        roots.setdefault(find(parent, i), []).append(i)
+    out = []
+    for ids in roots.values():
+        g = shapely.make_valid(shapely.union_all([geoms[k] for k in ids]))
+        ps = [q for q in shapely.get_parts(g)
+              if q.geom_type == "Polygon" and q.area > 0]
+        if ps:
+            out.append(shapely.union_all(ps))
+    return gpd.GeoDataFrame(geometry=out, crs=A)
+
+
+def refine_best(z, frame, r=30.0, progress=None):
+    """Finishing chain shared by training and inference.
+
+    Morphological round-trip at ``r`` metres, topology seal, multipart split,
+    then a second seal pass.  The archived acceptance chain used r=60; the
+    delivery radius is 30 after visual/metric comparison (less corner
+    erosion, same topology guarantees).
+    """
+    def rep(pct, msg):
+        if progress is not None:
+            progress(f"精细收口 · {r:g} m", pct, msg)
+    z = z[z.geometry.notna() & ~z.geometry.is_empty].reset_index(drop=True)
+    z = z.to_crs(A)
+    rep(90, f"{r:g} m 形态平滑")
+    geoms = []
+    for g in z.geometry:
+        g = shapely.make_valid(g)
+        g = shapely.buffer(
+            shapely.buffer(g, -r, quad_segs=4, join_style="round"),
+            r, quad_segs=8, join_style="round")
+        geoms.append(shapely.set_precision(shapely.make_valid(g), 0.01))
+    z = gpd.GeoDataFrame(z.drop(columns="geometry"), geometry=geoms, crs=A)
+    rep(91, "消重叠 · 补缝")
+    z = resolve_overlaps(z)
+    z = fill_gaps(z, frame)
+    z = resolve_overlaps(z)
+    z = strip_holes(z)
+    rep(92, "多部件拆分")
+    z = split_multipart(z, promote_km2=0.15)
+    z = resolve_overlaps(z)
+    z = fill_gaps(z, frame)
+    z = resolve_overlaps(z)
+    z = strip_holes(z)
+    rep(93, "包络合并 · 拓扑收尾")
+    for _ in range(4):
+        geoms = [shapely.make_valid(g) for g in z.geometry]
+        geoms, _n = merge_enclaves(geoms)
+        z = gpd.GeoDataFrame(geometry=geoms, crs=A)
+        z = _keep_single(z)
+        z = resolve_overlaps(z)
+        z = fill_gaps(z, frame)
+        z = resolve_overlaps(z)
+        z = strip_holes(z)
+        holes = sum(len(p.interiors) for g in z.geometry
+                    for p in shapely.get_parts(g) if p.geom_type == "Polygon")
+        mp = sum(len(shapely.get_parts(g)) > 1 for g in z.geometry)
+        if holes == 0 and mp == 0:
+            break
+    # Last mile: no fill after this point, so keep-single / strip cannot be
+    # undone by a new multipart union.
+    for _ in range(3):
+        geoms = [shapely.make_valid(g) for g in z.geometry]
+        geoms, _n = merge_enclaves(geoms)
+        z = gpd.GeoDataFrame(geometry=geoms, crs=A)
+        z = _keep_single(z)
+        z = resolve_overlaps(z)
+        z = strip_holes(z)
+        holes = sum(len(p.interiors) for g in z.geometry
+                    for p in shapely.get_parts(g) if p.geom_type == "Polygon")
+        mp = sum(len(shapely.get_parts(g)) > 1 for g in z.geometry)
+        if holes == 0 and mp == 0:
+            break
+    # resolve_overlaps can shave off a zero-area sliver on the last pass;
+    # split only, do not resolve again, so the multipart invariant holds.
+    z = split_multipart(z, promote_km2=0.15)
+    return z.reset_index(drop=True)
+
+
+def _keep_single(z):
+    geoms = []
+    for g in z.geometry:
+        ps = [q for q in shapely.get_parts(shapely.make_valid(g))
+              if q.geom_type == "Polygon" and q.area > 0]
+        geoms.append(max(ps, key=lambda q: q.area) if ps else None)
+    z = gpd.GeoDataFrame(geometry=geoms, crs=A)
+    return z[z.geometry.notna() & ~z.geometry.is_empty].reset_index(drop=True)
+
+
+def smooth_final(z, frame, r_all=20.0, r_target=60.0, progress=None):
+    """Morphological smoothing + single-part cleanup + gap fill."""
+    def rep(pct, msg):
+        if progress is not None:
+            progress("形态平滑 · 补缝", pct, msg)
+    rep(94, "全域 20 m 开闭运算")
+    z = z[z.geometry.notna() & ~z.geometry.is_empty].reset_index(drop=True)
+    geoms = []
+    for g in z.geometry:
+        g = shapely.buffer(
+            shapely.buffer(shapely.make_valid(g), -r_all, quad_segs=4,
+                           join_style="round"),
+            r_all, quad_segs=8, join_style="round")
+        geoms.append(shapely.set_precision(shapely.make_valid(g), 0.01))
+    z = gpd.GeoDataFrame(geometry=geoms, crs=A)
+    z = resolve_overlaps(z)
+    z = fill_gaps(z, frame)
+    z = resolve_overlaps(z)
+    z = strip_holes(z)
+    for _ in range(4):
+        z = _keep_single(z)
+        z = resolve_overlaps(z)
+        z = strip_holes(z)
+        if all(len(shapely.get_parts(x)) == 1 for x in z.geometry):
+            break
+    rep(95, "低紧致度城市区定向平滑")
+    geoms = []
+    for g in z.geometry:
+        a = g.area / 1e6
+        pp = 4 * np.pi * g.area / max(g.length ** 2, 1e-9)
+        if a < 10 and pp < 0.35:
+            g = shapely.buffer(
+                shapely.buffer(g, -r_target, quad_segs=4,
+                               join_style="round"),
+                r_target, quad_segs=8, join_style="round")
+        geoms.append(shapely.set_precision(shapely.make_valid(g), 0.01))
+    z = gpd.GeoDataFrame(geometry=geoms, crs=A)
+    z = resolve_overlaps(z)
+    z = fill_gaps(z, frame)
+    z = resolve_overlaps(z)
+    z = strip_holes(z)
+    for _ in range(4):
+        z = _keep_single(z)
+        z = resolve_overlaps(z)
+        z = strip_holes(z)
+        if all(len(shapely.get_parts(x)) == 1 for x in z.geometry):
+            break
+    # residual gaps: merge into an adjacent zone when the union stays single
+    rep(96, "最终补缝")
+    for _ in range(2):
+        cov = shapely.union_all(list(z.geometry))
+        gap = shapely.make_valid(frame.difference(cov))
+        pieces = [p for p in shapely.get_parts(gap)
+                  if p.geom_type == "Polygon" and p.area > 1.0]
+        if not pieces:
+            break
+        geoms = list(z.geometry)
+        tree = shapely.STRtree(np.asarray(geoms, dtype=object))
+        for p in pieces:
+            cand = []
+            for jj in tree.query(p, predicate="intersects"):
+                j = int(jj)
+                L = geoms[j].boundary.intersection(p.boundary).length
+                if L > 0.05:
+                    cand.append((L, j))
+            cand.sort(reverse=True)
+            done = False
+            for _L, j in cand:
+                u = shapely.union_all([geoms[j], p])
+                if (u.geom_type == "Polygon" and u.is_valid
+                        and abs(u.area - geoms[j].area - p.area) < 1.0):
+                    geoms[j] = u
+                    done = True
+                    break
+            if not done:
+                d = shapely.distance(p, geoms)
+                j = int(np.argmin(d))
+                u = shapely.union_all([geoms[j], p])
+                if u.geom_type == "Polygon" and u.is_valid:
+                    geoms[j] = u
+        z = gpd.GeoDataFrame(geometry=geoms, crs=A)
+        z = resolve_overlaps(z)
+        z = strip_holes(z)
+    rep(99, "拓扑收尾")
+    z = _keep_single(z)
+    z = resolve_overlaps(z)
+    z = strip_holes(z)
+    return z.reset_index(drop=True)

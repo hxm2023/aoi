@@ -15,24 +15,25 @@ python run.py --port 8020
 
 Python 3.10+，CPU 运行；XGBoost 使用 `tree_method="hist"`。
 
-## 数据放置（不随包提供）
+## 数据放置（本交付文件夹已放入；Git 不跟踪大文件）
 
 - **OSM PBF**：放入 `data/china/`，文件名前缀必须是省份 ID（见
   `app/china_provinces.json`），例如：
 
 ```
 data/china/guangdong-260918.osm.pbf
+data/china/shanghai-260903.osm.pbf
 data/china/fujian-261114.osm.pbf
 data/china/beijing-261114.osm.pbf
 ```
 
 没有对应省份 PBF 时，前端会提示“目前无本地 OSM 数据，暂不支持”。
-PBF 不随包上传；请从合法 OSM 数据源获取后放入该目录。
+本交付文件夹已放入广东、上海、北京、福建 PBF（后三者用于省外零样本示例）；
+Git 仓库因体积不跟踪它们。
 
-- **标准方案 CSV（可选，仅用于对照显示）**：推理不需要它，包内也不包含。
-  若想在前端勾选“标准微网格边界”，把 CSV 放到
-  `data/reference/广东移动新版微网格20250420.csv`；它只用于叠加显示，
-  不参与分区推理。
+- **标准方案 CSV（可选，仅用于对照/离线评估）**：本交付文件夹已放入
+  `data/reference/广东移动新版微网格20250420.csv`；Git 仓库不跟踪。
+  它只用于叠加显示和离线评估，不参与分区推理。
 
 - 广东 21 市的陆地边界已内置在 `data/frames/`，用于城市模式裁剪。
 
@@ -43,7 +44,8 @@ PBF 不随包上传；请从合法 OSM 数据源获取后放入该目录。
 3. 只选省份直接生成时：陆地面积 ≤25,000 km² 的省份一次性生成；更大的
    省份按市/州逐个生成再聚合成省域结果（广东为 21 个市），每个市单独缓存，
    中断后重跑会跳过已完成城市；
-4. 首次生成某地区会从 PBF 构建底图和特征，耗时数分钟；重复生成和调参走缓存；
+4. 广东城市首次生成会加载训练同口径底图（与评测图同源）；县/区、自定义
+   bbox 和省外会从 PBF 构建底图和特征，耗时数分钟；重复生成和调参走缓存；
 5. 生成结果只绘制分区边界线；分区名称取自 OSM 的 place/道路/用地/水系等
    `name` 字段，点击分区可查看名称、名称来源、面积等属性；
 6. “清除缓存与结果”可清理生成缓存；刷新页面释放当前图层。
@@ -60,14 +62,25 @@ PBF 不随包上传；请从合法 OSM 数据源获取后放入该目录。
 
 - 省级生成：小省一次推理；大省按市/州聚合，省域边界裁剪后统一编号、名称去重
   （重名分区追加城市名和序号）。首次省级生成需要跑完所有市/州，耗时较长。
-- 结果缓存：若 `cache/<PBF文件名>/<城市>/final_cache_t0.80.json` 存在且版本匹配，
-  后端直接加载同目录的 `zones_t0.80.geojson`，跳过推理/平滑；用于分发已验收
-  结果。`cache_seed/shenzhen/` 提供深圳示例，放置方法见 `cache_seed/README.md`。
-- 深圳验收 profile：`pipeline/runner.py` 的 `CITY_PROFILES["深圳"]` 固化了深圳
-  验收版的预处理和收口参数（启用 `cls2` 语义特征、引导目标 0.6 km²、吸收
-  0.3 km²、20/60 m 平滑）。新机从 PBF 重跑深圳时按此 profile 重建，前端会
-  显示 profile 名称。该模型训练时只有深圳的 `cls2` 特征有效，因此这是一个
-  显式的深圳验收配置；统一公平口径仍需重训全省模型。
+- 统一算法口径：前后端所有城市都使用同一套 profile——`hc4` 部署模型、详细
+  线网、`cls2` 语义边界特征、阈值 0.8、引导目标 0.6 km²、碎块吸收 0.3 km²、
+  30 m 精细收口；不再按城市切换特征或加载预生成结果。生成完成后的状态栏会
+  显示当前模型名和收口半径。
+- 训练与推理使用同一套 `pipeline/`：从 PBF 构建线网/面网/特征，重训模型后
+  直接推理；省级按市逐个处理再聚合，避免一次性把全省几何放进内存。
+- **广东城市生成复用训练同口径底图**：前端生成广东某市时，直接读取
+  `training/commercial_zoning/cache/province_1_5_0_legacy/<城市>/` 的
+  `lines/upper3-faces/pairs_pbf` 以及该底图配套的 `eval_frame.geojson`
+  评测外框（都是预处理数据，不是最终分区结果），再走和离线图完全相同的
+  hc4/引导合并/后处理/30 m 收口；珠海、广州已逐区验证：区数和指标与离线图
+  完全一致（平均最佳 IoU 1.0000）。`eval_frame.geojson` 是底图缓存的一部分，运行时读取它但不读
+  标准方案 CSV 或标签。
+- 县/区、自定义 bbox 和省外没有预生成底图，从 PBF 在线构建，走的是
+  **同一条** 1.3.0 链（准备线网 → 辅助边 → 候选选择 → 去重/断点修复 →
+  语义合并 → 原子面 → 58 基础特征 → 32 上下文特征），然后进入同一套
+  XGB/引导合并/后处理/30 m 收口。
+- 注意：删除 `province_1_5_0_legacy` 缓存后，广东城市会走在线链，外框改用
+  行政/陆地边界，无法与评测图逐区一致；要完全复现请保留该训练底图缓存。
 - 自定义 bbox 上限 25,000 km²，超过请改选市/县或缩小范围。
 - 没有 PBF 的省份/地区会直接提示缺失 OSM 数据，不会联网下载。
 - 县/区和非广东城市按行政 bbox 裁剪，沿海区域可能包含少量海域；广东 21 市使用
@@ -81,16 +94,16 @@ PBF 不随包上传；请从合法 OSM 数据源获取后放入该目录。
 app/                    FastAPI 路由、省/市/县目录、任务队列、FineGrid 服务
 pipeline/               OSM 预处理、面网、90 特征、XGB 推理、引导合并、后处理/平滑/补缝
 models/
-  province_1_5_0_pbf_hc2/  广东 21 市部署模型（UBJ）、特征表与模型卡
+  province_1_5_0_pbf_hc4/  广东 21 市部署模型（UBJ）、特征表与元数据
+  province_1_5_0_pbf_hc2/  历史版本，运行时不加载
   area_calibration.pkl     OSM-only 面积校准
 data/frames/            广东 21 市陆地边界
-data/china/             放省份 PBF（不随包提供）
-data/reference/         可选标准方案对照；不随包提供
+data/china/             省份 PBF（本交付文件夹已放入；Git 不跟踪）
+data/reference/         标准方案 CSV（本交付文件夹已放入；Git 不跟踪）
 cache/                  生成缓存（底图/特征/市级聚合结果，可删除重建）
-cache_seed/             可选的已验收结果缓存（深圳示例），按 README 放入 cache/
-training/               离线训练/数据构建/评估代码；PBF/CSV 由使用者放入
+training/               训练/数据构建/评估代码 + 数据资产 + 验收结果
 web/                    单页前端（本地 MapLibre，仅边界线）
-docs/                   方法说明与结果图
+docs/                   算法指南、特征/阈值参考、交付清单（docs/algorithm_guide/）
 run.py                  启动入口
 requirements.txt
 ```
@@ -101,28 +114,47 @@ requirements.txt
    近重复合并、断点修复、走廊清理；
 2. **面网与特征**：多边形化原子面，相邻面块对 58 个几何/边界/邻接特征 +
    32 个 OSM 用地/POI 上下文特征（共 90）；
-3. **XGB 推理**：广东 21 市 568,257 个面块对训练的部署模型输出合并概率；
+3. **XGB 推理**：广东 21 市统一 90 特征训练的部署模型输出合并概率；
 4. **引导合并**：先按阈值 0.8 合并，再把小于目标面积的分区沿 XGB 概率最高的
    相邻边合并（目标 0.6 km²）；
 5. **后处理**：吸收碎块（0.3 km²）、补缝、消重叠、包络合并、清洞、简化；
-6. **形态平滑与补缝**：全域 20 m 开闭运算 + 低紧致度城市区 60 m 定向平滑，
-   再补齐参考足迹内的剩余缝隙；
+6. **精细收口**：30 m 形态平滑、消重叠、补缝、多部件拆分、包络合并，再做
+   拓扑清洞；训练和推理共用同一套 `finalize.refine_best`；
 7. **分区命名**：按 OSM 名称优先级取分区名（地名点 → 分区内道路 → 用地/水系/
    自然面 → 800 m 内地名点 → 兜底“区域+序号”），同名分区加序号；省级聚合时
    跨市重名再追加城市名；
 8. **省级生成**：省域面积 ≤25,000 km² 时一次推理；更大省份按市/州分别推理，
    结果裁剪到省域边界后聚合，单市结果落盘缓存，支持中断续跑。
 
-更详细的流程、训练/验证口径和结果见 `docs/METHOD.md`。
+完整算法讲解见 **`docs/algorithm_guide/ALGORITHM_GUIDE.md`**（工程结构、流程图、
+深圳坪山/广州海珠逐阶段图、验收图、动作含义）；开发过程证据（清洗前后对比、
+候选线评测、标准方案未覆盖边界、upper3、后处理消融、XGB 重要性/SHAP、
+省外零样本）见 **`docs/algorithm_guide/DEVELOPMENT_EVIDENCE.md`**；90 个特征的
+公式/逐特征解释、全部阈值和代码位置见
+**`docs/algorithm_guide/FEATURES_AND_THRESHOLDS.md`**；交付包清单见
+**`docs/DELIVERY.md`**。
 
 ## 模型与结果
 
-- 模型：`province_1_5_0_pbf_hc2`，90 特征，广东 21 市全量部署模型；
-  全量训练 AUC 0.9843，城市整组留出 AUC 约 0.812，2 km 瓦片 CV AUC 约 0.819。
-- 深圳参考结果（离线评估，部署模型）：1,470 区，贪心 1-1 IoU 0.6677，
-  匹配率 0.8494，全参考 IoU 0.5671，0 洞 / 0 多部件。
-  该指标是深圳基准；其他地区随 OSM 覆盖和标准方案差异会变化。
-- 结果图：`docs/images/finegrid_stages.png`、`docs/images/final_local_contact_*.png`。
+- 模型：`province_1_5_0_pbf_hc4`，90 特征，广东 21 市全量部署模型（733,311
+  对，统一 1.3.0 旧范式底图，`cls2` 特征全省启用）；train AUC 0.9866。
+- 离线评估（hc4 + 30 m 收口，均为 0 洞 / 0 多部件）：
+
+| 城市 | 区数 | 贪心 1-1 IoU | 匹配率 | 全参考 IoU |
+|---|---:|---:|---:|---:|
+| 深圳 | 1,271 | 0.6057 | 0.7147 | 0.4329 |
+| 广州 | 1,966 | 0.5636 | 0.8388 | 0.4728 |
+| 佛山 | 1,340 | 0.5720 | 0.8749 | 0.5005 |
+| 东莞 | 1,256 | 0.5377 | 0.8231 | 0.4426 |
+| 珠海 | 455 | 0.6276 | 0.8513 | 0.5343 |
+
+表中城市都在训练集内，指标是 in-sample 部署效果，不是城市留出泛化指标。
+- 历史 1.3.0 深圳验收基准（60 m 口径）：1,470 区，IoU 0.6677，匹配率
+  0.8494，全参考 IoU 0.5671；hc4 为 21 市统一模型的泛化取舍，深圳指标低于
+  该单市基准。其他地区随 OSM 覆盖和标准方案差异会变化。
+- 城市图：`docs/algorithm_guide/figures/final_cities_hc4_r30/`（彩块=FineGrid
+  分区，黑线=标准方案）；结果图：`docs/images/finegrid_stages.png`、
+  `docs/images/final_local_contact_*.png`。
 - 模型卡与 SHA256：`training/MODEL_CARD.md`、`training/MANIFEST.md`。
 
 ## 训练与评估复现
@@ -131,17 +163,21 @@ requirements.txt
 
 - 代码：`training/tools/`（线网构建、语义合并、upper3 标签、面块对特征、
   PBF 上下文特征、城市/省级分区、参考方案评估、逐市指标、阈值扫描）；
-- 一键脚本：`training/scripts/run_province_1_5_0.sh`；
+- 验收旧范式复现：`training/scripts/run_legacy_reproduction.sh`；
+- 标准统一口径：`training/scripts/run_province_1_5_0.sh`；
 - 说明：`training/README.md`（数据放置、命令、产物、复现口径）；
-- 数据：PBF 放 `training/data/china/`，标准方案 CSV 放
-  `training/aoi_zoning_delivery/data/reference/`；均不随仓库分发。
+- 数据资产：`training/assets/legacy_shenzhen_1_3_0/`（精确深圳旧底图）、
+  `training/commercial_zoning/cache/clean_lines_aux/`（21 市清理线）、
+  `training/data/china/`（PBF）、`training/aoi_zoning_delivery/data/reference/`
+  （参考 CSV）、`training/accepted/`（验收结果和指标）。
 
-注意：发布模型训练时深圳复用了旧版底图，38 个 `cls2` 特征只在深圳非零；
-从零重建会得到更公平但指标不同的模型，详见 `training/README.md` 和
-`training/MODEL_CARD.md`。要严格复刻发布模型，需要那两份旧缓存。
+这些数据都在**本交付文件夹**内；Git 仓库出于体积/授权原因不跟踪 PBF、CSV
+和大缓存。深圳训练/评估锚定精确 1.3.0 资产，其他城市使用同一旧范式链；
+hc4 统一模型已写入 `models/province_1_5_0_pbf_hc4/`，逐市指标在
+`training/results/city_hc4_r30/`。
 
 ## 数据与许可
 
 - OSM 数据 © OpenStreetMap contributors，ODbL 1.0。
-- 标准方案 CSV 为第三方数据，不随包分发，推理不使用。
+- 标准方案 CSV 为第三方数据，Git 不跟踪；本交付文件夹已放入，仅用于离线评估/对照。
 - 本包模型与派生结果按 ODbL 1.0 提供。

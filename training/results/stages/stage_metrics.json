@@ -1,0 +1,104 @@
+{
+  "深圳": {
+    "city": "深圳",
+    "threshold": 0.8,
+    "target": 0.6,
+    "absorb": 0.3,
+    "finish_r": 30.0,
+    "stages": {
+      "draft": {
+        "zones": 1751,
+        "area_km2": 2327.132,
+        "overlap_km2": 0.0,
+        "gap_km2": 110.897356,
+        "holes": 13864,
+        "multipart": 0,
+        "area_p50": 0.681,
+        "iou": 0.5493,
+        "matched": 0.7768,
+        "allref": 0.4267,
+        "bF1": 0.4513
+      },
+      "post": {
+        "zones": 1248,
+        "area_km2": 2438.029,
+        "overlap_km2": 0.002742,
+        "gap_km2": 0.001153,
+        "holes": 0,
+        "multipart": 0,
+        "area_p50": 0.998,
+        "iou": 0.6012,
+        "matched": 0.7071,
+        "allref": 0.4251,
+        "bF1": 0.488
+      },
+      "final": {
+        "zones": 1271,
+        "area_km2": 2438.028,
+        "overlap_km2": 0.00057,
+        "gap_km2": 0.004859,
+        "holes": 0,
+        "multipart": 0,
+        "area_p50": 0.991,
+        "iou": 0.6057,
+        "matched": 0.7147,
+        "allref": 0.4329,
+        "bF1": 0.4742
+      }
+    },
+    "absorbed": 504,
+    "enclave_merged": 2,
+    "elapsed_s": 520.4
+  },
+  "佛山": {
+    "city": "佛山",
+    "threshold": 0.8,
+    "target": 0.6,
+    "absorb": 0.3,
+    "finish_r": 30.0,
+    "stages": {
+      "draft": {
+        "zones": 1514,
+        "area_km2": 3709.566,
+        "overlap_km2": 0.0,
+        "gap_km2": 95.265532,
+        "holes": 12668,
+        "multipart": 0,
+        "area_p50": 1.399,
+        "iou": 0.54,
+        "matched": 0.8993,
+        "allref": 0.4856,
+        "bF1": 0.3771
+      },
+      "post": {
+        "zones": 1310,
+        "area_km2": 3804.831,
+        "overlap_km2": 0.000349,
+        "gap_km2": 0.001274,
+        "holes": 0,
+        "multipart": 0,
+        "area_p50": 1.657,
+        "iou": 0.5677,
+        "matched": 0.8733,
+        "allref": 0.4958,
+        "bF1": 0.4077
+      },
+      "final": {
+        "zones": 1340,
+        "area_km2": 3804.827,
+        "overlap_km2": 0.000618,
+        "gap_km2": 0.006237,
+        "holes": 0,
+        "multipart": 0,
+        "area_p50": 1.627,
+        "iou": 0.572,
+        "matched": 0.8749,
+        "allref": 0.5005,
+        "bF1": 0.4004
+      }
+    },
+    "absorbed": 202,
+    "enclave_merged": 2,
+    "elapsed_s": 515.7
+  }
+}
