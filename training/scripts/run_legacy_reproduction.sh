@@ -4,6 +4,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# 0) Rebuild the cleaned-line cache from the local PBF if it is not shipped.
+#    Requires training/data/china/guangdong-260918.osm.pbf.
+python tools/build_province_frames.py
+python tools/build_province_lines.py --pbf data/china/guangdong-260918.osm.pbf
+
 # 1) Build the old-paradigm substrate for all 21 cities.
 #    Shenzhen is anchored on the exact 1.3.0 asset in training/assets/.
 python tools/build_legacy_substrate.py

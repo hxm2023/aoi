@@ -86,8 +86,10 @@ Python 3.10–3.12，64 位；训练和评估需要 `matplotlib`、`scipy`、`ra
 bash training/scripts/run_legacy_reproduction.sh
 ```
 
-它会使用本文件夹内的数据资产：`clean_lines_aux` → `select/clean/conflate`
-→ 标签/面块对/PBF 特征 → 深圳锚定精确 1.3.0 资产 → 训练 hc4 → 深圳评估。
+它会先由 PBF 重建城市边界和 `clean_lines_aux`，再执行
+`select/clean/conflate` → 标签/面块对/PBF 特征 → 深圳锚定精确 1.3.0 资产
+→ 训练 hc4 → 深圳评估。运行前需要放好 `training/data/china` 的 PBF 和
+`training/aoi_zoning_delivery/data/reference` 的标准 CSV。
 
 历史统一 cls2 实验链（hc3，未达标，不发布；仅用于对照）：
 
