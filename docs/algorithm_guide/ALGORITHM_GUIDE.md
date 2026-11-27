@@ -127,13 +127,12 @@ FineGrid-XGB-1.5.0/
 ├─ run.py                     启动 FastAPI（前端 + 后端同一个进程）
 ├─ requirements.txt           推理依赖
 ├─ README.md                  快速启动、数据放置、结果说明
-├─ LICENSE.md                 许可
 ├─ app/                       FastAPI 路由与服务
 ├─ pipeline/                  算法核心（预处理/推理/收口/命名）
 ├─ web/                       单页前端（MapLibre）
 ├─ models/                    发布模型与面积校准
 ├─ data/                      PBF / 参考 CSV / 城市陆域边界
-├─ cache/                     运行时缓存（可删除重建，不入 Git）
+├─ cache/                     运行时缓存（可删除重建）
 ├─ training/                  离线训练、数据构建、评估代码
 └─ docs/                      方法说明、算法详解、图片
 ```
@@ -221,8 +220,8 @@ FineGrid-XGB-1.5.0/
 | `web/vendor/` | 本地 MapLibre JS/CSS（离线可用） |
 | `models/province_1_5_0_pbf_hc4/` | 当前发布模型 `merge_model.ubj` + 90 特征表 + 元数据（hc2 为历史版本，不加载） |
 | `models/area_calibration.pkl` | OSM-only 面积校准模型 |
-| `data/china/` | 省份 PBF（本交付文件夹已放入；Git 不跟踪） |
-| `data/reference/` | 标准方案 CSV（本交付文件夹已放入；Git 不跟踪） |
+| `data/china/` | 省份 PBF（需要手动放入） |
+| `data/reference/` | 标准方案 CSV（需要手动放入） |
 | `data/frames/` | 广东 21 市陆域边界 |
 | `docs/DELIVERY.md` | 完整交付包清单与各目录大小 |
 | `docs/algorithm_guide/FEATURES_AND_THRESHOLDS.md` | 90 特征公式/逐特征解释、全部阈值、代码位置 |

@@ -1,5 +1,8 @@
 # 训练/验证模型与校准
 
+> 本目录是 hc2 时期的城市整组留出验证模型与面积校准，保留作方法对照；
+> 当前交付的 hc4 部署模型在项目根目录 `models/province_1_5_0_pbf_hc4/`。
+
 ## province_1_5_0_pbf/
 
 城市整组留出的正则化模型（XGBoost JSON），用于验证/测试地区图和阈值评估：
@@ -43,7 +46,7 @@ OSM-only 面积校准模型：
 
 ## 与发布模型的关系
 
-发布的分块合并模型是仓库根目录
-`models/province_1_5_0_pbf_hc2/merge_model.ubj`（deep 部署模型）。本目录的
+发布的分块合并模型是项目根目录
+`models/province_1_5_0_pbf_hc4/merge_model.ubj`（deep 部署模型）。本目录的
 `province_1_5_0_pbf` 是用于**验证/测试地区图**的正则化模型，不是最终部署
 模型；两者的场景和指标不要混用。
