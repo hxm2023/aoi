@@ -31,11 +31,30 @@ data/china/beijing-261114.osm.pbf
 本交付文件夹已放入广东、上海、北京、福建 PBF（后三者用于省外零样本示例）；
 Git 仓库因体积不跟踪它们。
 
-- **标准方案 CSV（可选，仅用于对照/离线评估）**：本交付文件夹已放入
+- **标准方案 CSV**：本交付文件夹已放入
   `data/reference/广东移动新版微网格20250420.csv`；Git 仓库不跟踪。
-  它只用于叠加显示和离线评估，不参与分区推理。
+  它用于叠加显示、离线评估/图片、训练标签和底图配套的 `eval_frame`；
+  日常推理不读取它的标签，但精确复现评测图需要它。
 
 - 广东 21 市的陆地边界已内置在 `data/frames/`，用于城市模式裁剪。
+
+**Git 克隆后需要手动放置**（Git 不跟踪 PBF/CSV/缓存）：
+
+```
+data/china/guangdong-260918.osm.pbf                    # 必选，前端推理
+data/china/shanghai-260903.osm.pbf                     # 可选，省外示例
+data/china/beijing-261114.osm.pbf                      # 可选
+data/china/fujian-261114.osm.pbf                       # 可选
+data/reference/广东移动新版微网格20250420.csv           # 评测/精确复现
+
+training/data/china/guangdong-260918.osm.pbf           # 训练复制一份
+training/aoi_zoning_delivery/data/reference/
+  广东移动新版微网格20250420.csv                       # 训练复制一份
+```
+
+模型、城市边界和深圳精确 1.3.0 资产已随 Git 仓库上传；`clean_lines_aux`
+和 `province_1_5_0_legacy` 可由 PBF + 标准 CSV 重建（见
+`training/scripts/run_legacy_reproduction.sh`）。
 
 ## 使用
 
