@@ -270,13 +270,19 @@ def _profile(region):
     return UNIFORM_PROFILE
 
 
+STRICT_OSM = os.environ.get("AOI_STRICT_OSM", "0") == "1"
+
+
 def _legacy_city_substrate(region):
     """Training-paradigm substrate for a Guangdong city, if shipped.
 
     The accepted evaluation figures use the 1.3.0 select/clean/conflate
     chain; reusing these files keeps online city inference byte-for-byte on
     the same substrate.  This is preprocessing data, not a final result.
+    Set AOI_STRICT_OSM=1 to force the reference-free online chain instead.
     """
+    if STRICT_OSM:
+        return None
     if region.get("kind") != "city":
         return None
     city = str(region.get("city") or "")

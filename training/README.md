@@ -1,6 +1,6 @@
 # FineGrid-XGB 1.5.0 训练与评估复现
 
-本目录是**离线训练、数据构建和评估**代码。仓库根目录的 `app/`、`pipeline/`、
+本目录是**离线训练、数据构建和评估**代码。项目根目录的 `app/`、`pipeline/`、
 `web/`、`run.py` 是推理/前端包；日常生成分区不需要本目录。
 
 训练使用 CPU 的 XGBoost `hist`，不依赖 GPU。当前统一口径是**所有城市启用
@@ -46,9 +46,8 @@ training/assets/legacy_shenzhen_1_3_0/                194 MB
 training/accepted/                                    21 MB
 ```
 
-Git 仓库出于体积/授权原因仍然忽略 PBF、标准 CSV 和缓存；如果你通过 Git
-克隆而不是直接拷贝交付文件夹，需要按 README 自备这些数据。`cache/` 下的
-hc3/fresh 历史实验缓存不属于 hc4 复现所需，可以删除。
+PBF、标准 CSV 和缓存默认不在代码包中；直接拷贝交付文件夹时它们是齐的。
+`cache/` 下的 hc3/fresh 历史实验缓存不属于 hc4 复现所需，可以删除。
 
 ## 目录约定
 
@@ -60,7 +59,7 @@ training/
   aoi_zoning_delivery/data/reference/广东移动新版微网格20250420.csv
 ```
 
-如果仓库根目录已有文件，直接复制过去即可。两个 README 已放在对应目录。
+如果项目根目录已有文件，直接复制过去即可。两个 README 已放在对应目录。
 
 ## 环境
 
@@ -69,7 +68,7 @@ cd FineGrid-XGB-1.5.0
 python -m venv .venv
 # Windows CMD/PowerShell:
 .venv\Scripts\activate
-# Git Bash / macOS / Linux:
+# bash / macOS / Linux:
 source .venv/bin/activate
 
 pip install -r requirements.txt -r training/requirements-train.txt
@@ -78,7 +77,7 @@ pip install -r requirements.txt -r training/requirements-train.txt
 Python 3.10–3.12，64 位；训练和评估需要 `matplotlib`、`scipy`、`rasterio`、
 `pyproj`。
 
-## 一键运行（推荐 Git Bash / Linux）
+## 一键运行（推荐 bash / Linux）
 
 验收版旧范式复现：
 
@@ -209,7 +208,7 @@ training/results/city_metrics_uniform.csv
 training/results/eval_sz_hc3.json
 ```
 
-发布模型在仓库根目录 `../models/`；重新训练默认写到
+发布模型在项目根目录 `../models/`；重新训练默认写到
 `training/commercial_zoning/models/`，不会覆盖发布模型。替换发布模型时复制
 `merge_model.ubj`、`features.json`、`metadata.json`，并核对 `MANIFEST.md`。
 
@@ -232,9 +231,3 @@ training/results/eval_sz_hc3.json
    本地模型，复用本目录同一套流程。
 6. **不加载预生成结果。** 交付和评估只走训练/推理流程，不使用结果缓存或
    深圳专用 profile。
-
-## 数据与许可
-
-- OSM 数据 © OpenStreetMap contributors，ODbL 1.0；
-- 标准方案 CSV 为第三方数据，不随仓库分发，仅用于离线标签和评估；
-- 训练产物和派生结果按根目录 `LICENSE.md` 提供。

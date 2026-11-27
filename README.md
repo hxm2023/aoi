@@ -15,7 +15,7 @@ python run.py --port 8020
 
 Python 3.10+，CPU 运行；XGBoost 使用 `tree_method="hist"`。
 
-## 数据放置（本交付文件夹已放入；Git 不跟踪大文件）
+## 数据放置（PBF/CSV 需要手动放入）
 
 - **OSM PBF**：放入 `data/china/`，文件名前缀必须是省份 ID（见
   `app/china_provinces.json`），例如：
@@ -29,16 +29,16 @@ data/china/beijing-261114.osm.pbf
 
 没有对应省份 PBF 时，前端会提示“目前无本地 OSM 数据，暂不支持”。
 本交付文件夹已放入广东、上海、北京、福建 PBF（后三者用于省外零样本示例）；
-Git 仓库因体积不跟踪它们。
+代码包默认不包含这些大文件。
 
 - **标准方案 CSV**：本交付文件夹已放入
-  `data/reference/广东移动新版微网格20250420.csv`；Git 仓库不跟踪。
+  `data/reference/广东移动新版微网格20250420.csv`。
   它用于叠加显示、离线评估/图片、训练标签和底图配套的 `eval_frame`；
   日常推理不读取它的标签，但精确复现评测图需要它。
 
 - 广东 21 市的陆地边界已内置在 `data/frames/`，用于城市模式裁剪。
 
-**Git 克隆后需要手动放置**（Git 不跟踪 PBF/CSV/缓存）：
+**部署到新机器后需要手动放置**：
 
 ```
 data/china/guangdong-260918.osm.pbf                    # 必选，前端推理
@@ -52,9 +52,9 @@ training/aoi_zoning_delivery/data/reference/
   广东移动新版微网格20250420.csv                       # 训练复制一份
 ```
 
-模型、城市边界和深圳精确 1.3.0 资产已随 Git 仓库上传；`clean_lines_aux`
+模型、城市边界和深圳精确 1.3.0 资产随代码包提供；`clean_lines_aux`
 和 `province_1_5_0_legacy` 可由 PBF + 标准 CSV 重建（见
-`training/scripts/run_legacy_reproduction.sh`）。
+`docs/REPRODUCTION.md` 和 `training/scripts/run_legacy_reproduction.sh`）。
 
 ## 使用
 
@@ -98,8 +98,13 @@ training/aoi_zoning_delivery/data/reference/
   **同一条** 1.3.0 链（准备线网 → 辅助边 → 候选选择 → 去重/断点修复 →
   语义合并 → 原子面 → 58 基础特征 → 32 上下文特征），然后进入同一套
   XGB/引导合并/后处理/30 m 收口。
-- 注意：删除 `province_1_5_0_legacy` 缓存后，广东城市会走在线链，外框改用
-  行政/陆地边界，无法与评测图逐区一致；要完全复现请保留该训练底图缓存。
+- 严格无参考模式：设置 `AOI_STRICT_OSM=1` 后，前端跳过
+  `province_1_5_0_legacy` 和 `eval_frame`，从 PBF 在线构建同一条链，
+  不读取标准方案 CSV；此时分区质量走同一套 OSM 预处理/模型，但外框使用
+  行政/陆地边界，边缘结果与参考外框的评测图会有差异。
+- 注意：不启用严格模式且保留 `province_1_5_0_legacy` 时，广东城市会使用
+  该训练底图和评测外框，与离线图逐区一致；删除缓存或启用严格模式后，
+  外框改用行政/陆地边界，不再与评测图逐区一致。
 - 自定义 bbox 上限 25,000 km²，超过请改选市/县或缩小范围。
 - 没有 PBF 的省份/地区会直接提示缺失 OSM 数据，不会联网下载。
 - 县/区和非广东城市按行政 bbox 裁剪，沿海区域可能包含少量海域；广东 21 市使用
@@ -117,8 +122,8 @@ models/
   province_1_5_0_pbf_hc2/  历史版本，运行时不加载
   area_calibration.pkl     OSM-only 面积校准
 data/frames/            广东 21 市陆地边界
-data/china/             省份 PBF（本交付文件夹已放入；Git 不跟踪）
-data/reference/         标准方案 CSV（本交付文件夹已放入；Git 不跟踪）
+data/china/             省份 PBF（需要手动放入）
+data/reference/         标准方案 CSV（需要手动放入）
 cache/                  生成缓存（底图/特征/市级聚合结果，可删除重建）
 training/               训练/数据构建/评估代码 + 数据资产 + 验收结果
 web/                    单页前端（本地 MapLibre，仅边界线）
@@ -190,13 +195,11 @@ requirements.txt
   `training/data/china/`（PBF）、`training/aoi_zoning_delivery/data/reference/`
   （参考 CSV）、`training/accepted/`（验收结果和指标）。
 
-这些数据都在**本交付文件夹**内；Git 仓库出于体积/授权原因不跟踪 PBF、CSV
-和大缓存。深圳训练/评估锚定精确 1.3.0 资产，其他城市使用同一旧范式链；
+这些数据都在**本交付文件夹**内；代码包默认不包含 PBF、CSV 和大缓存。
+深圳训练/评估锚定精确 1.3.0 资产，其他城市使用同一旧范式链；
 hc4 统一模型已写入 `models/province_1_5_0_pbf_hc4/`，逐市指标在
 `training/results/city_hc4_r30/`。
 
-## 数据与许可
+## 复现
 
-- OSM 数据 © OpenStreetMap contributors，ODbL 1.0。
-- 标准方案 CSV 为第三方数据，Git 不跟踪；本交付文件夹已放入，仅用于离线评估/对照。
-- 本包模型与派生结果按 ODbL 1.0 提供。
+训练、前端推理、离线图片和证据图的完整命令见 `docs/REPRODUCTION.md`。

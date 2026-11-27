@@ -27,8 +27,11 @@
 逐区验证平均最佳 IoU 1.0000，区数和指标与离线图完全一致。底图缺失时、以及县/区、自定义 bbox 和省外，
 从 PBF 走同一条 1.3.0 旧范式链在线构建
 （prepare_lines→aux→select→clean→conflate→faces→pairs→PBF 上下文），
-再进入同一套后处理。若删除该训练底图缓存，广东城市外框会改用行政/陆地
-边界，不再与评测图逐区一致；要完全复现请保留缓存。
+再进入同一套后处理。严格无参考部署可设置 `AOI_STRICT_OSM=1`：跳过
+`province_1_5_0_legacy`/`eval_frame`，从 PBF 在线重建同一条链，不读标准
+方案；外框使用行政/陆地边界，边缘结果与参考外框的评测图会有差异。
+不启用严格模式且保留缓存时，广东城市与评测图逐区一致；删除缓存或启用
+严格模式后不再逐区一致。完整命令见 `docs/REPRODUCTION.md`。
 
 启动：
 
@@ -52,7 +55,7 @@ python run.py --port 8020
 | `training/assets/legacy_shenzhen_1_3_0/` | 精确深圳 1.3.0 底图/标签/pairs | 194 MB |
 | `training/accepted/` | 历史验收结果 GeoJSON 和精简指标 | 21 MB |
 
-PBF、标准 CSV 和大缓存不进入 Git 仓库；直接拷贝本文件夹时它们是齐的。
+PBF、标准 CSV 和大缓存默认不在代码包中；直接拷贝本文件夹时它们是齐的。
 `training/commercial_zoning/cache/` 下还保留 hc3/fresh 等历史实验缓存，复现
 当前 hc4 不需要它们，可以删除。
 
@@ -77,7 +80,8 @@ PBF、标准 CSV 和大缓存不进入 Git 仓库；直接拷贝本文件夹时�
 
 | 路径 | 内容 |
 |---|---|
-| `README.md` | 启动、数据、模型、结果 |
+| `README.md` | 启动、数据、模型、结果、复现入口 |
+| `docs/REPRODUCTION.md` | 训练、前端推理、离线图片、省外示例的完整命令 |
 | `docs/algorithm_guide/FEATURES_AND_THRESHOLDS.md` | 90 特征公式/解释 + 所有阈值 |
 | `docs/algorithm_guide/ALGORITHM_GUIDE.md` | 新人流程图解、动作含义、阶段图 |
 | `docs/algorithm_guide/DEVELOPMENT_EVIDENCE.md` | 开发证据：清洗对比、候选线评测、未覆盖边界、upper3、后处理、XGB/SHAP、省外示例 |
@@ -113,4 +117,3 @@ hc4 逐市结果（30 m 收口）：深圳 1,271 区 / IoU 0.6057 / 匹配 0.714
 
 - `cache/`：运行时生成缓存，可删除重建；
 - `docs/algorithm_guide/figures/existing/`：原有结果图；
-- `.gitignore`：Git 不跟踪 PBF/CSV/cache，但本交付文件夹里已包含这些数据。

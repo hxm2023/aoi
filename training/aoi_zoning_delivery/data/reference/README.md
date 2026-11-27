@@ -14,4 +14,4 @@ cp "data/reference/广东移动新版微网格20250420.csv" \
    training/aoi_zoning_delivery/data/reference/
 ```
 
-该 CSV 是第三方数据，不随仓库分发；训练标签、评估和逐市指标都需要它。
+训练标签、评估和逐市指标都需要它，请自行放入本目录。

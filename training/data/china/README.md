@@ -13,5 +13,5 @@ mkdir -p training/data/china
 cp data/china/guangdong-260918.osm.pbf training/data/china/
 ```
 
-PBF 不随仓库分发。训练和推理应使用同一份 PBF；换 PBF 版本后需要重建
+PBF 请自行放入本目录。训练和推理应使用同一份 PBF；换 PBF 版本后需要重建
 `clean_lines_aux`、pairs 和模型。
