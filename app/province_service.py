@@ -426,6 +426,8 @@ def start_province(req):
             "finish_r_m": stats.get("finish_r_m"),
             "model": stats.get("model"),
             "scheme": stats.get("scheme"),
+            "substrate_source": stats.get("substrate_source"),
+            "frame_source": stats.get("frame_source"),
             "holes": stats.get("holes"),
             "multipart": stats.get("multipart"),
             "bad_zones": int(stats.get("holes", 0))

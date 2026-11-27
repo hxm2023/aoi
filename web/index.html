@@ -384,6 +384,8 @@ async function generate(bbox, scope="view", adminName=null, level=null, center=n
       + (m.engine?`，${m.engine}`:"")
       + (m.model?` · 模型 ${m.model}`:"")
       + (m.finish_r_m!=null?` · 收口 ${m.finish_r_m} m`:"")
+      + (m.substrate_source?` · 底图 ${m.substrate_source==="legacy_city_cache"?"旧范式缓存":"在线构建"}`:"")
+      + (m.frame_source?` · 外框 ${m.frame_source==="legacy_eval_frame"?"评测外框":"区域外框"}`:"")
       + (j.cached?"（底图缓存）":`，耗时 ${m.elapsed_s??"?"} s`)
       + (mem!=null?`，内存 ${mem} MB`:"");
     setTimeout(()=>{progressWrap.style.display="none";},2500);
