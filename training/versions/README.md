@@ -1,14 +1,10 @@
-# 可选：旧版 Shenzhen 底图缓存
+# 旧版 Shenzhen 底图缓存（历史）
 
-为了复现仓库里发布的 `merge_model.ubj`，需要训练时用到的两份旧缓存：
+当前交付模型 hc4 的精确深圳底图已放在
+`training/assets/legacy_shenzhen_1_3_0/`，随交付文件夹提供；复现 hc4 不需要
+`training/versions/1.3.0/shenzhen/` 或
+`training/commercial_zoning/cache/work_universal/`。
 
-```
-training/versions/1.3.0/shenzhen/
-training/commercial_zoning/cache/work_universal/
-```
-
-它们体积约 GB 级，且包含中间质检产物，不随仓库分发。缺少时
-`tools/build_province_1_5_0.py` 会自动退回从 `clean_lines_aux` 重新构建；
-这样能跑通，但训练出来的模型不会与发布模型完全一致。
-
-具体差异和替代方案见 `training/README.md` 的“复现口径”一节。
+本目录只保留给历史统一链 `tools/build_province_1_5_0.py` 参考：缺少旧的
+`work_universal` 缓存时，它会从 `clean_lines_aux` 重新构建，得到的底图与
+历史模型不会逐字节一致。
